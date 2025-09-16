@@ -965,7 +965,7 @@ CATCH-UP DATA - Previously Missing Days:
                 self.logger.info("No previous data found in database")
                 return None
                 
-        _key': self.config['ecowitt']['api_key'],
+        'api_key': self.config['ecowitt']['api_key'],
                 'mac': self.config['ecowitt']['mac'],
                 'call_back': 'all'
             }
