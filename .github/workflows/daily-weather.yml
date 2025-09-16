@@ -27,7 +27,7 @@ jobs:
     - name: Install Python dependencies
       run: |
         pip install --upgrade pip
-        pip install requests pandas numpy matplotlib windrose scipy sqlite3
+        pip install -r requirements.txt
         
     - name: Run weather processor
       env:
