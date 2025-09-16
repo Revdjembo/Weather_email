@@ -1,0 +1,52 @@
+name: Daily Weather Report
+
+on:
+  schedule:
+    # Run daily at 8:00 AM UTC (adjust timezone as needed)
+    - cron: '0 8 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  weather-report:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-dev python3-pip
+        
+    - name: Install Python dependencies
+      run: |
+        pip install --upgrade pip
+        pip install requests pandas numpy matplotlib windrose scipy sqlite3
+        
+    - name: Run weather processor
+      env:
+        ECOWITT_API_KEY: ${{ secrets.ECOWITT_API_KEY }}
+        ECOWITT_APP_KEY: ${{ secrets.ECOWITT_APP_KEY }}
+        ECOWITT_MAC: ${{ secrets.ECOWITT_MAC }}
+        GMAIL_EMAIL: ${{ secrets.GMAIL_EMAIL }}
+        GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+        RECEIVER_EMAILS: ${{ secrets.RECEIVER_EMAILS }}
+        GITHUB_ACTIONS: 'true'
+      run: |
+        python enhanced_weather_processor.py
+        
+    - name: Upload artifacts (optional - for debugging)
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: weather-data
+        path: |
+          weather_data.db
+          weather_charts/
+          weather_processor.log
