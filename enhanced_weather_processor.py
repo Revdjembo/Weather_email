@@ -120,7 +120,7 @@ class EcowittWeatherProcessor:
                     
                     <!-- Beaker column -->
                     <td style="vertical-align: bottom;">
-                        <div style="width: 120px; height: 120px; border: 3px solid #666; border-top: none; border-radius: 0 0 6px 6px; background: #f8f8f8; overflow: hidden;">
+                        <div style="width: 80px; height: 120px; border: 3px solid #666; border-top: none; border-radius: 0 0 25px 25px; background: #f8f8f8; overflow: hidden;">
                             <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; height: 120px;">
                                 <!-- Empty cells at top -->
                                 {'' if filled_cells >= 6 else f'<tr style="height: {20 * (6 - filled_cells)}px;"><td style="background: transparent;"></td></tr>'}
