@@ -718,7 +718,7 @@ class EcowittWeatherProcessor:
             temp_chart_file = self.create_minimal_temperature_chart(target_date, days=14)
 
             rainfall_mm = daily_stats['total_rainfall'] * 25.4
-            beaker_html = self.create_beaker_rainfall_widget(rainfall_mm)
+            beaker_html = self.create_beaker_rainfall_widget(rainfall_mm, max_scale=25.0)
 
             receiver_emails = self.config['email']['receiver_email']
             if isinstance(receiver_emails, list):
