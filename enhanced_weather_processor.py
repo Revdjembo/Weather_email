@@ -88,35 +88,44 @@ class EcowittWeatherProcessor:
             <div style="text-align: center; margin: 20px 0;">
                 <div style="font-size: 18px; color: #333; font-weight: bold; margin-bottom: 15px;">Daily Rainfall</div>
                 
-                <div style="display: inline-flex; align-items: flex-end; justify-content: center; margin-bottom: 15px;">
-                    <!-- Scale labels - vertical alignment with better spacing -->
-                    <div style="display: flex; flex-direction: column-reverse; justify-content: space-between; height: 120px; font-size: 11px; color: #666; margin-right: 8px; text-align: right;">
-                        <div style="line-height: 1; height: 20px; display: flex; align-items: flex-end;">0</div>
-                        <div style="line-height: 1; height: 20px; display: flex; align-items: center;">{max_scale*0.2:.0f}</div>
-                        <div style="line-height: 1; height: 20px; display: flex; align-items: center;">{max_scale*0.4:.0f}</div>
-                        <div style="line-height: 1; height: 20px; display: flex; align-items: center;">{max_scale*0.6:.0f}</div>
-                        <div style="line-height: 1; height: 20px; display: flex; align-items: center;">{max_scale*0.8:.0f}</div>
-                        <div style="line-height: 1; height: 20px; display: flex; align-items: flex-start;">{max_scale:.0f}</div>
-                    </div>
+                <!-- Use table for reliable email client compatibility -->
+                <table cellpadding="0" cellspacing="0" style="margin: 0 auto; border-collapse: collapse;">
+                <tr>
+                    <!-- Scale column -->
+                    <td style="vertical-align: bottom; padding-right: 5px;">
+                        <table cellpadding="0" cellspacing="0" style="height: 120px; border-collapse: collapse;">
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: bottom;">{max_scale:.0f}</td></tr>
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">{max_scale*0.8:.0f}</td></tr>
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">{max_scale*0.6:.0f}</td></tr>
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">{max_scale*0.4:.0f}</td></tr>
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">{max_scale*0.2:.0f}</td></tr>
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: top;">0</td></tr>
+                        </table>
+                    </td>
                     
-                    <!-- Tick marks -->
-                    <div style="display: flex; flex-direction: column-reverse; justify-content: space-between; height: 120px; margin-right: 3px;">
-                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
-                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
-                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
-                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
-                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
-                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
-                    </div>
+                    <!-- Tick marks column -->
+                    <td style="vertical-align: bottom; padding-right: 3px;">
+                        <table cellpadding="0" cellspacing="0" style="height: 120px; border-collapse: collapse;">
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
+                        </table>
+                    </td>
                     
-                    <!-- Beaker container -->
-                    <div style="width: 60px; height: 120px; border: 3px solid #666; border-top: none; border-radius: 0 0 20px 20px; position: relative; background: linear-gradient(to bottom, rgba(255,255,255,0.1) 0%, rgba(240,240,240,0.3) 100%); overflow: hidden; display: inline-block;">
-                        <!-- Water/rainfall fill -->
-                        <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, #1976d2 0%, #42a5f5 50%, #64b5f6 100%); height: {rainfall_percentage}%; transition: height 0.3s ease;"></div>
-                    </div>
-                </div>
+                    <!-- Beaker column -->
+                    <td style="vertical-align: bottom;">
+                        <div style="width: 60px; height: 120px; border: 3px solid #666; border-top: none; border-radius: 0 0 20px 20px; position: relative; background: #f5f5f5;">
+                            <!-- Water fill from bottom using bottom positioning -->
+                            <div style="position: absolute; bottom: 0; left: 0; right: 0; width: 100%; background: linear-gradient(to top, #1976d2 0%, #42a5f5 50%, #64b5f6 100%); height: {rainfall_percentage}%;"></div>
+                        </div>
+                    </td>
+                </tr>
+                </table>
                 
-                <div style="font-size: 28px; color: #1976d2; margin: 10px 0 5px 0; font-weight: 600;">{rainfall_mm:.1f} mm</div>
+                <div style="font-size: 28px; color: #1976d2; margin: 15px 0 5px 0; font-weight: 600;">{rainfall_mm:.1f} mm</div>
                 <div style="font-size: 16px; color: #666; margin-bottom: 15px;">({rainfall_inches:.2f} inches)</div>
             </div>
             '''
