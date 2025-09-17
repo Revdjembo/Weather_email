@@ -86,25 +86,38 @@ class EcowittWeatherProcessor:
 
             beaker_html = f'''
             <div style="text-align: center; margin: 20px 0;">
-                <div style="font-size: 18px; color: #333; font-weight: bold; margin-bottom: 10px;">Daily Rainfall</div>
+                <div style="font-size: 18px; color: #333; font-weight: bold; margin-bottom: 15px;">Daily Rainfall</div>
                 
-                <div style="display: flex; align-items: flex-end; justify-content: center; margin-bottom: 10px;">
-                    <div style="display: flex; flex-direction: column; justify-content: space-between; height: 120px; font-size: 10px; color: #666; margin-right: 5px; text-align: right; padding-top: 2px;">
-                        <div style="display: flex; align-items: center; height: 1px;"><span>{max_scale:.0f}</span><div style="width: 6px; height: 1px; background: #ccc; margin-left: 4px;"></div></div>
-                        <div style="display: flex; align-items: center; height: 1px;"><span>{max_scale*0.8:.0f}</span><div style="width: 6px; height: 1px; background: #ccc; margin-left: 4px;"></div></div>
-                        <div style="display: flex; align-items: center; height: 1px;"><span>{max_scale*0.6:.0f}</span><div style="width: 6px; height: 1px; background: #ccc; margin-left: 4px;"></div></div>
-                        <div style="display: flex; align-items: center; height: 1px;"><span>{max_scale*0.4:.0f}</span><div style="width: 6px; height: 1px; background: #ccc; margin-left: 4px;"></div></div>
-                        <div style="display: flex; align-items: center; height: 1px;"><span>{max_scale*0.2:.0f}</span><div style="width: 6px; height: 1px; background: #ccc; margin-left: 4px;"></div></div>
-                        <div style="display: flex; align-items: center; height: 1px;"><span>0</span><div style="width: 6px; height: 1px; background: #ccc; margin-left: 4px;"></div></div>
+                <div style="display: inline-flex; align-items: flex-end; justify-content: center; margin-bottom: 15px;">
+                    <!-- Scale labels - vertical alignment -->
+                    <div style="display: flex; flex-direction: column; justify-content: space-between; height: 120px; font-size: 11px; color: #666; margin-right: 8px; text-align: right;">
+                        <div style="line-height: 1; margin-bottom: 2px;">{max_scale:.0f}</div>
+                        <div style="line-height: 1; margin-bottom: 2px;">{max_scale*0.8:.0f}</div>
+                        <div style="line-height: 1; margin-bottom: 2px;">{max_scale*0.6:.0f}</div>
+                        <div style="line-height: 1; margin-bottom: 2px;">{max_scale*0.4:.0f}</div>
+                        <div style="line-height: 1; margin-bottom: 2px;">{max_scale*0.2:.0f}</div>
+                        <div style="line-height: 1;">0</div>
                     </div>
                     
-                    <div style="width: 80px; height: 120px; border: 2px solid #ddd; border-radius: 0 0 12px 12px; position: relative; background: linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%); overflow: hidden; display: inline-block;">
-                        <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to bottom, #4fc3f7 0%, #29b6f6 50%, #0288d1 100%); border-radius: 0 0 10px 10px; height: {rainfall_percentage}%;"></div>
+                    <!-- Tick marks -->
+                    <div style="display: flex; flex-direction: column; justify-content: space-between; height: 120px; margin-right: 3px;">
+                        <div style="width: 8px; height: 1px; background: #999;"></div>
+                        <div style="width: 8px; height: 1px; background: #999;"></div>
+                        <div style="width: 8px; height: 1px; background: #999;"></div>
+                        <div style="width: 8px; height: 1px; background: #999;"></div>
+                        <div style="width: 8px; height: 1px; background: #999;"></div>
+                        <div style="width: 8px; height: 1px; background: #999;"></div>
+                    </div>
+                    
+                    <!-- Beaker container -->
+                    <div style="width: 60px; height: 120px; border: 3px solid #666; border-top: none; border-radius: 0 0 20px 20px; position: relative; background: linear-gradient(to bottom, rgba(255,255,255,0.1) 0%, rgba(240,240,240,0.3) 100%); overflow: hidden; display: inline-block;">
+                        <!-- Water/rainfall fill -->
+                        <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, #1976d2 0%, #42a5f5 50%, #64b5f6 100%); height: {rainfall_percentage}%; transition: height 0.3s ease;"></div>
                     </div>
                 </div>
                 
-                <div style="font-size: 24px; color: #333; margin: 10px 0 5px 0; font-weight: 300;">{rainfall_mm:.1f} mm</div>
-                <div style="font-size: 14px; color: #666; margin-bottom: 15px;">({rainfall_inches:.2f} inches)</div>
+                <div style="font-size: 28px; color: #1976d2; margin: 10px 0 5px 0; font-weight: 600;">{rainfall_mm:.1f} mm</div>
+                <div style="font-size: 16px; color: #666; margin-bottom: 15px;">({rainfall_inches:.2f} inches)</div>
             </div>
             '''
             return beaker_html
