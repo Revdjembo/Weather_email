@@ -89,24 +89,24 @@ class EcowittWeatherProcessor:
                 <div style="font-size: 18px; color: #333; font-weight: bold; margin-bottom: 15px;">Daily Rainfall</div>
                 
                 <div style="display: inline-flex; align-items: flex-end; justify-content: center; margin-bottom: 15px;">
-                    <!-- Scale labels - vertical alignment -->
-                    <div style="display: flex; flex-direction: column; justify-content: space-between; height: 120px; font-size: 11px; color: #666; margin-right: 8px; text-align: right;">
-                        <div style="line-height: 1; margin-bottom: 2px;">{max_scale:.0f}</div>
-                        <div style="line-height: 1; margin-bottom: 2px;">{max_scale*0.8:.0f}</div>
-                        <div style="line-height: 1; margin-bottom: 2px;">{max_scale*0.6:.0f}</div>
-                        <div style="line-height: 1; margin-bottom: 2px;">{max_scale*0.4:.0f}</div>
-                        <div style="line-height: 1; margin-bottom: 2px;">{max_scale*0.2:.0f}</div>
-                        <div style="line-height: 1;">0</div>
+                    <!-- Scale labels - vertical alignment with better spacing -->
+                    <div style="display: flex; flex-direction: column-reverse; justify-content: space-between; height: 120px; font-size: 11px; color: #666; margin-right: 8px; text-align: right;">
+                        <div style="line-height: 1; height: 20px; display: flex; align-items: flex-end;">0</div>
+                        <div style="line-height: 1; height: 20px; display: flex; align-items: center;">{max_scale*0.2:.0f}</div>
+                        <div style="line-height: 1; height: 20px; display: flex; align-items: center;">{max_scale*0.4:.0f}</div>
+                        <div style="line-height: 1; height: 20px; display: flex; align-items: center;">{max_scale*0.6:.0f}</div>
+                        <div style="line-height: 1; height: 20px; display: flex; align-items: center;">{max_scale*0.8:.0f}</div>
+                        <div style="line-height: 1; height: 20px; display: flex; align-items: flex-start;">{max_scale:.0f}</div>
                     </div>
                     
                     <!-- Tick marks -->
-                    <div style="display: flex; flex-direction: column; justify-content: space-between; height: 120px; margin-right: 3px;">
-                        <div style="width: 8px; height: 1px; background: #999;"></div>
-                        <div style="width: 8px; height: 1px; background: #999;"></div>
-                        <div style="width: 8px; height: 1px; background: #999;"></div>
-                        <div style="width: 8px; height: 1px; background: #999;"></div>
-                        <div style="width: 8px; height: 1px; background: #999;"></div>
-                        <div style="width: 8px; height: 1px; background: #999;"></div>
+                    <div style="display: flex; flex-direction: column-reverse; justify-content: space-between; height: 120px; margin-right: 3px;">
+                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
+                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
+                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
+                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
+                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
+                        <div style="width: 8px; height: 1px; background: #999; margin: 10px 0;"></div>
                     </div>
                     
                     <!-- Beaker container -->
