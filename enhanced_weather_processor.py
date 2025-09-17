@@ -95,7 +95,7 @@ class EcowittWeatherProcessor:
                 <table cellpadding="0" cellspacing="0" style="margin: 0 auto; border-collapse: collapse;">
                 <tr>
                     <!-- Scale column -->
-                    <td style="vertical-align: bottom; padding-right: 5px;">
+                    <td style="vertical-align: bottom; padding-right: 8px;">
                         <table cellpadding="0" cellspacing="0" style="height: 120px; border-collapse: collapse;">
                             <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">{max_scale:.0f}</td></tr>
                             <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">{max_scale*0.8:.0f}</td></tr>
@@ -107,23 +107,23 @@ class EcowittWeatherProcessor:
                     </td>
                     
                     <!-- Tick marks column -->
-                    <td style="vertical-align: bottom; padding-right: 3px;">
+                    <td style="vertical-align: bottom; padding-right: 5px;">
                         <table cellpadding="0" cellspacing="0" style="height: 120px; border-collapse: collapse;">
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 8px;"></td></tr>
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
+                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
                         </table>
                     </td>
                     
                     <!-- Beaker column -->
                     <td style="vertical-align: bottom;">
-                        <div style="border: 3px solid #666; border-top: none; border-radius: 0 0 20px 20px; width: 60px;">
-                            <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 60px; height: 120px;">
+                        <div style="width: 80px; height: 120px; border: 3px solid #666; border-top: none; border-radius: 0 0 25px 25px; background: #f8f8f8; overflow: hidden;">
+                            <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; height: 120px;">
                                 <!-- Empty cells at top -->
-                                {'' if filled_cells >= 6 else f'<tr style="height: {20 * (6 - filled_cells)}px;"><td style="background: #f5f5f5;"></td></tr>'}
+                                {'' if filled_cells >= 6 else f'<tr style="height: {20 * (6 - filled_cells)}px;"><td style="background: transparent;"></td></tr>'}
                                 
                                 <!-- Filled cells at bottom -->
                                 {f'<tr style="height: {20 * filled_cells}px;"><td style="background: linear-gradient(to top, #1976d2 0%, #42a5f5 50%, #64b5f6 100%);"></td></tr>' if filled_cells > 0 else ''}
