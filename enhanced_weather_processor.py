@@ -662,9 +662,9 @@ class EcowittWeatherProcessor:
             self.logger.info(f"Minimal temperature chart created: {temp_chart_file}")
             self.logger.info(f"Temperature range: {temp_range}, Average: {avg_temp:.1f}°C")
 
-    def create_windrose_html_widget(self, target_date) -> str:
-        """Create HTML windrose widget for email integration"""
-        try:
+            def create_windrose_html_widget(self, target_date) -> str:
+            """Create HTML windrose widget for email integration"""
+            try:
             # Get last 7 days of wind data
             end_date = target_date
             start_date = end_date - timedelta(days=6)
