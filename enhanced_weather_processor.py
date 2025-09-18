@@ -662,11 +662,139 @@ class EcowittWeatherProcessor:
             self.logger.info(f"Minimal temperature chart created: {temp_chart_file}")
             self.logger.info(f"Temperature range: {temp_range}, Average: {avg_temp:.1f}°C")
 
-            return str(temp_chart_file)
+    def create_windrose_html_widget(self, target_date) -> str:
+        """Create HTML windrose widget for email integration"""
+        try:
+            # Get last 7 days of wind data
+            end_date = target_date
+            start_date = end_date - timedelta(days=6)
+
+            query = '''
+                SELECT wind_speed, wind_direction 
+                FROM hourly_data 
+                WHERE date BETWEEN ? AND ? AND wind_speed > 0
+            '''
+
+            df = pd.read_sql_query(query, self.conn, params=[
+                start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
+            ])
+
+            if df.empty:
+                self.logger.warning("No wind data available for windrose widget")
+                return '''
+                <div style="text-align: center; margin: 20px 0;">
+                    <div style="font-size: 16px; color: #333; font-weight: bold; margin-bottom: 15px;">Weekly Wind Pattern</div>
+                    <div style="width: 200px; height: 200px; margin: 0 auto; border: 2px solid #ddd; border-radius: 50%; background: #f8f9fa; display: flex; align-items: center; justify-content: center;">
+                        <div style="color: #999; font-size: 14px;">No wind data available</div>
+                    </div>
+                </div>
+                '''
+
+            # Process wind data into directional segments (8 directions)
+            directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+            direction_ranges = [
+                (337.5, 22.5), (22.5, 67.5), (67.5, 112.5), (112.5, 157.5),
+                (157.5, 202.5), (202.5, 247.5), (247.5, 292.5), (292.5, 337.5)
+            ]
+
+            # Calculate wind frequency and average speed for each direction
+            direction_data = {}
+            total_readings = len(df)
+
+            for i, (direction, (start_deg, end_deg)) in enumerate(zip(directions, direction_ranges)):
+                if start_deg > end_deg:  # Handle North (wraps around 360°)
+                    mask = (df['wind_direction'] >= start_deg) | (df['wind_direction'] < end_deg)
+                else:
+                    mask = (df['wind_direction'] >= start_deg) & (df['wind_direction'] < end_deg)
+                
+                direction_winds = df[mask]
+                frequency = len(direction_winds) / total_readings * 100 if total_readings > 0 else 0
+                avg_speed = direction_winds['wind_speed'].mean() if len(direction_winds) > 0 else 0
+                
+                direction_data[direction] = {
+                    'frequency': frequency,
+                    'avg_speed': avg_speed,
+                    'angle': i * 45  # 0°=N, 45°=NE, etc.
+                }
+
+            # Find dominant direction
+            dominant_dir = max(direction_data.keys(), key=lambda k: direction_data[k]['frequency'])
+            max_frequency = max(d['frequency'] for d in direction_data.values())
+
+            windrose_html = f'''
+            <div style="text-align: center; margin: 20px 0;">
+                <div style="font-size: 16px; color: #333; font-weight: bold; margin-bottom: 15px;">Weekly Wind Pattern</div>
+                
+                <!-- Wind rose circle container -->
+                <div style="position: relative; width: 200px; height: 200px; margin: 0 auto; border: 2px solid #ddd; border-radius: 50%; background: radial-gradient(circle, #f8f9fa 0%, #e9ecef 100%);">
+                    
+                    <!-- Center dot -->
+                    <div style="position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; background: #666; border-radius: 50%; transform: translate(-50%, -50%);"></div>
+                    
+                    <!-- Direction labels -->
+                    <div style="position: absolute; top: -5px; left: 50%; transform: translateX(-50%); font-size: 12px; font-weight: bold; color: #333;">N</div>
+                    <div style="position: absolute; top: 50%; right: -8px; transform: translateY(-50%); font-size: 12px; font-weight: bold; color: #333;">E</div>
+                    <div style="position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); font-size: 12px; font-weight: bold; color: #333;">S</div>
+                    <div style="position: absolute; top: 50%; left: -8px; transform: translateY(-50%); font-size: 12px; font-weight: bold; color: #333;">W</div>
+                    
+                    <!-- Wind direction bars -->'''
+
+            # Add wind direction bars
+            for direction, data in direction_data.items():
+                if data['frequency'] > 0:
+                    # Calculate bar length based on frequency (max 80px from center)
+                    bar_length = (data['frequency'] / max_frequency) * 60
+                    angle = data['angle']
+                    
+                    # Color based on wind speed
+                    if data['avg_speed'] < 5:
+                        color = '#90EE90'  # Light green
+                    elif data['avg_speed'] < 10:
+                        color = '#FFD700'  # Gold
+                    elif data['avg_speed'] < 15:
+                        color = '#FF8C00'  # Dark orange
+                    else:
+                        color = '#DC143C'  # Crimson
+
+                    windrose_html += f'''
+                    <div style="position: absolute; top: 50%; left: 50%; width: {bar_length}px; height: 8px; background: {color}; transform-origin: left center; transform: translate(0, -50%) rotate({angle}deg); opacity: 0.8; border-radius: 0 4px 4px 0;"></div>'''
+
+            windrose_html += f'''
+                </div>
+                
+                <!-- Legend and stats -->
+                <div style="margin-top: 15px; font-size: 12px; color: #666;">
+                    <div style="margin-bottom: 8px;">
+                        <strong>Dominant Direction:</strong> {dominant_dir} ({direction_data[dominant_dir]['frequency']:.1f}%)
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <span style="display: inline-block; width: 12px; height: 12px; background: #90EE90; margin-right: 4px; border-radius: 2px;"></span>&lt;5 mph
+                        <span style="display: inline-block; width: 12px; height: 12px; background: #FFD700; margin: 0 4px 0 8px; border-radius: 2px;"></span>5-10 mph
+                        <span style="display: inline-block; width: 12px; height: 12px; background: #FF8C00; margin: 0 4px 0 8px; border-radius: 2px;"></span>10-15 mph
+                        <span style="display: inline-block; width: 12px; height: 12px; background: #DC143C; margin: 0 4px 0 8px; border-radius: 2px;"></span>&gt;15 mph
+                    </div>
+                    <div style="font-size: 11px; color: #999;">
+                        Based on {total_readings} wind readings from {start_date.strftime("%m/%d")} to {end_date.strftime("%m/%d")}
+                    </div>
+                </div>
+            </div>
+            '''
+
+            self.logger.info(f"Windrose widget created: {total_readings} readings, dominant direction {dominant_dir}")
+            return windrose_html
 
         except Exception as e:
-            self.logger.error(f"Error creating minimal temperature chart: {e}")
-            return None
+            self.logger.error(f"Error creating windrose HTML widget: {e}")
+            import traceback
+            self.logger.error(f"Windrose error traceback: {traceback.format_exc()}")
+            return '''
+            <div style="text-align: center; margin: 20px 0;">
+                <div style="font-size: 16px; color: #333; font-weight: bold; margin-bottom: 15px;">Weekly Wind Pattern</div>
+                <div style="width: 200px; height: 200px; margin: 0 auto; border: 2px solid #ddd; border-radius: 50%; background: #f8f9fa; display: flex; align-items: center; justify-content: center;">
+                    <div style="color: #999; font-size: 14px;">Wind data unavailable</div>
+                </div>
+            </div>
+            '''
 
     def send_email_report(self, daily_stats, windrose_file, rain_file, catchup_days=None):
         """Send HTML email report with daily statistics and beaker widget - SIMPLIFIED VERSION"""
@@ -688,6 +816,15 @@ class EcowittWeatherProcessor:
             except Exception as e:
                 self.logger.error(f"DEBUGGING: Error creating beaker widget: {e}")
                 beaker_html = "<div style='text-align: center; color: #999;'>Rainfall data unavailable</div>"
+
+            # Create windrose widget with explicit error handling
+            self.logger.info("DEBUGGING: About to create windrose widget")
+            try:
+                windrose_html = self.create_windrose_html_widget(target_date)
+                self.logger.info(f"DEBUGGING: Windrose widget created successfully, length = {len(windrose_html)}")
+            except Exception as e:
+                self.logger.error(f"DEBUGGING: Error creating windrose widget: {e}")
+                windrose_html = "<div style='text-align: center; color: #999;'>Wind data unavailable</div>"
 
             # Handle email configuration
             receiver_emails = self.config['email']['receiver_email']
@@ -785,6 +922,10 @@ Generated by Enhanced Ecowitt Weather Processor
 
                     <div class="rainfall-section">
                         {beaker_html}
+                    </div>
+
+                    <div class="rainfall-section">
+                        {windrose_html}
                     </div>
 
                     <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 14px;">
