@@ -49,7 +49,7 @@ jobs:
             weather-db-
 
       - name: Run weather processor
-        run: python your_script_name.py
+        run: python enhanced_weather_processor.py
 
       - name: Save updated DB back to cache (best-effort)
         if: always()
