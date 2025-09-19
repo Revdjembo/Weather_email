@@ -2,7 +2,7 @@ name: Send Weather Email
 
 on:
   schedule:
-    # Runs every day at 07:10 London time (cron is UTC, London is usually UTC±0/±1)
+    # Cron runs in UTC. 06:10 UTC ≈ 07:10 London during BST; 06:10 London in winter.
     - cron: '10 6 * * *'
   workflow_dispatch: {}
 
@@ -10,16 +10,15 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      # Ensure your script uses London localtime for "yesterday", etc.
       TZ: Europe/London
 
-      # ——— Required by your script (set these as GitHub repo Secrets) ———
+      # ---- Required secrets (set these in your repo Settings > Secrets and variables > Actions) ----
       ECOWITT_API_KEY: ${{ secrets.ECOWITT_API_KEY }}
       ECOWITT_APP_KEY: ${{ secrets.ECOWITT_APP_KEY }}
-      ECOWITT_MAC: ${{ secrets.ECOWITT_MAC }}          # e.g. F0:F5:BD:8A:FA:9C
-      GMAIL_EMAIL: ${{ secrets.GMAIL_EMAIL }}          # your Gmail address
-      GMAIL_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}# Gmail app password (not your normal password)
-      RECEIVER_EMAILS: ${{ secrets.RECEIVER_EMAILS }}  # comma-separated list
+      ECOWITT_MAC: ${{ secrets.ECOWITT_MAC }}
+      GMAIL_EMAIL: ${{ secrets.GMAIL_EMAIL }}
+      GMAIL_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}   # use a Gmail App Password
+      RECEIVER_EMAILS: ${{ secrets.RECEIVER_EMAILS }}     # e.g. "me@example.com,friend@example.com"
 
     steps:
       - name: Checkout repo
@@ -29,17 +28,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'          # enables pip cache keyed by requirements.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # If you have a requirements.txt, prefer: pip install -r requirements.txt
-          pip install pandas numpy requests scipy matplotlib
-          # Optional: install the nicer windrose axes
-          pip install matplotlib-windrose || true
+          pip install -r requirements.txt
 
-      # —— Option A (recommended): keep your SQLite DB between runs so the windrose has real 7-day history ——
-      # Cache works best when the key changes rarely; use a stable key and restore-keys.
+      # (Optional) Keep your SQLite DB between runs so the windrose has full history
       - name: Restore DB cache
         uses: actions/cache@v4
         with:
@@ -48,12 +44,27 @@ jobs:
           restore-keys: |
             weather-db-
 
-      - name: Run weather processor
-        run: python enhanced_weather_processor.py
+      - name: Show repo contents (debug)
+        run: |
+          pwd
+          ls -la
+          echo "---- Python files found ----"
+          find . -maxdepth 3 -type f -name "*.py" -print
 
-      - name: Save updated DB back to cache (best-effort)
+      - name: Run weather processor
+        env:
+          SCRIPT_PATH: enhanced_weather_processor.py   # <-- change if your script lives elsewhere
+        run: |
+          if [ ! -f "$SCRIPT_PATH" ]; then
+            echo "ERROR: $SCRIPT_PATH not found. Update SCRIPT_PATH to match your repo."
+            exit 1
+          fi
+          python "$SCRIPT_PATH"
+
+      # (Optional) Save updated DB back to cache (best-effort)
+      - name: Save DB snapshot
         if: always()
         uses: actions/cache/save@v4
         with:
           path: weather_data.db
-          key: weather-db-v1-${{ github.run_id }}  # force-save a fresh copy
+          key: weather-db-v1-${{ github.run_id }}
