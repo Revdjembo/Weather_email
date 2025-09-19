@@ -48,38 +48,48 @@ class EcowittWeatherProcessor:
     # ---------- Setup & Configuration ----------
 
     def load_config(self, config_file='weather_config.json'):
-        """Load configuration from JSON file or environment variables."""
-        if os.getenv('GITHUB_ACTIONS') or os.getenv('ECOWITT_API_KEY'):
-            logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-            logger = logging.getLogger(__name__)
-            logger.info("Running in cloud environment - using environment variables")
+    if os.getenv('GITHUB_ACTIONS') or os.getenv('ECOWITT_API_KEY'):
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        logger = logging.getLogger(__name__)
+        logger.info("Running in cloud environment - using environment variables")
 
-            cloud_config = {
-                "ecowitt": {
-                    "api_key": os.getenv('ECOWITT_API_KEY', ''),
-                    "application_key": os.getenv('ECOWITT_APP_KEY', ''),
-                    "mac": os.getenv('ECOWITT_MAC', 'F0:F5:BD:8A:FA:9C'),
-                    "base_url": "https://api.ecowitt.net/api/v3"
-                },
-                "email": {
-                    "smtp_server": "smtp.gmail.com",
-                    "smtp_port": 587,
-                    "sender_email": os.getenv('GMAIL_EMAIL', 'revdjem@gmail.com'),
-                    "sender_password": os.getenv('GMAIL_PASSWORD', ''),
-                    "receiver_email": os.getenv('RECEIVER_EMAILS', 'revdjem@gmail.com,gillythomp1@gmail.com').split(',')
-                },
-                "data": {
-                    "database_file": "weather_data.db",
-                    "charts_directory": "weather_charts"
-                }
+        # accept either env var name for safety
+        gmail_password = os.getenv('GMAIL_PASSWORD') or os.getenv('GMAIL_APP_PASSWORD') or ''
+
+        cloud_config = {
+            "ecowitt": {
+                "api_key": os.getenv('ECOWITT_API_KEY', ''),
+                "application_key": os.getenv('ECOWITT_APP_KEY', ''),
+                "mac": os.getenv('ECOWITT_MAC', 'F0:F5:BD:8A:FA:9C'),
+                "base_url": "https://api.ecowitt.net/api/v3"
+            },
+            "email": {
+                "smtp_server": "smtp.gmail.com",
+                "smtp_port": 587,
+                "sender_email": os.getenv('GMAIL_EMAIL', 'revdjem@gmail.com'),
+                "sender_password": gmail_password,
+                "receiver_email": os.getenv('RECEIVER_EMAILS', 'revdjem@gmail.com').split(',')
+            },
+            "data": {
+                "database_file": "weather_data.db",
+                "charts_directory": "weather_charts"
             }
+        }
 
-            required_vars = ['ECOWITT_API_KEY', 'ECOWITT_APP_KEY', 'GMAIL_PASSWORD']
-            missing = [v for v in required_vars if not os.getenv(v)]
-            if missing:
-                logger.error(f"Missing required environment variables: {missing}")
-                raise ValueError(f"Missing required environment variables: {missing}")
-            return cloud_config
+        required = {
+            'ECOWITT_API_KEY': os.getenv('ECOWITT_API_KEY'),
+            'ECOWITT_APP_KEY': os.getenv('ECOWITT_APP_KEY'),
+            'GMAIL_EMAIL': os.getenv('GMAIL_EMAIL'),
+            'GMAIL_PASSWORD/GMAIL_APP_PASSWORD': gmail_password
+        }
+        missing = [k for k, v in required.items() if not v]
+        if missing:
+            logger.error(f"Missing required environment variables: {missing}")
+            raise ValueError(f"Missing required environment variables: {missing}")
+
+        return cloud_config
+    # ... (rest unchanged)
+
 
         # Local config file optional; fallback defaults if absent
         if os.path.exists(config_file):
