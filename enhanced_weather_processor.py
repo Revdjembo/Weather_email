@@ -499,11 +499,21 @@ class EcowittWeatherProcessor:
             self.logger.error(f"create_minimal_temperature_chart error: {e}")
             return None
 
-    def create_matplotlib_windrose(self, target_date: datetime, days: int = 7) -> Optional[str]:
-        """
-        Create a Matplotlib windrose PNG for the previous `days` ending at target_date.
-        Uses the `windrose` package if available; otherwise draws a stacked polar bar fallback.
-        """
+    def create_matplotlib_windrose(self, target_date: datetime, days: int = 7,
+                               width_px: int = 220, dpi: int = 150) -> Optional[str]:
+    ...
+    # compute a square figure size from desired pixel width
+    figsize = (width_px / dpi, width_px / dpi)  # e.g., 220px @150dpi ≈ 1.47"
+    # remove old hard-coded values:
+    # dpi = 200
+    # figsize = (5, 5)
+    ...
+    # when creating the figure, use the new figsize/dpi everywhere
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    ...
+    # (same for fallback path)
+    # fig = plt.figure(figsize=figsize, dpi=dpi)
+
         try:
             end_date = target_date
             start_date = end_date - timedelta(days=days - 1)
@@ -667,7 +677,7 @@ class EcowittWeatherProcessor:
         try:
             target_date = datetime.strptime(daily_stats['date'], '%Y-%m-%d')
             temp_chart_file = self.create_minimal_temperature_chart(target_date, days=14)
-            windrose_file = self.create_matplotlib_windrose(target_date, days=7)
+            windrose_file = self.create_matplotlib_windrose(target_date, days=7, width_px=220, dpi=150)
 
             rainfall_mm = daily_stats['total_rainfall'] * 25.4
             beaker_html = self.create_beaker_rainfall_widget(rainfall_mm, max_scale=25.0)
