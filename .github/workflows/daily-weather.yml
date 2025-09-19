@@ -35,7 +35,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # (Optional) Keep your SQLite DB between runs so the windrose has full history
+      # ✅ Add this right after installs
+      - name: Syntax check
+        env:
+          SCRIPT_PATH: enhanced_weather_processor.py   # adjust if your file lives elsewhere
+        run: |
+          python -m py_compile "$SCRIPT_PATH"
+
       - name: Restore DB cache
         uses: actions/cache@v4
         with:
@@ -53,13 +59,14 @@ jobs:
 
       - name: Run weather processor
         env:
-          SCRIPT_PATH: enhanced_weather_processor.py   # <-- change if your script lives elsewhere
+          SCRIPT_PATH: enhanced_weather_processor.py
         run: |
           if [ ! -f "$SCRIPT_PATH" ]; then
             echo "ERROR: $SCRIPT_PATH not found. Update SCRIPT_PATH to match your repo."
             exit 1
           fi
           python "$SCRIPT_PATH"
+
 
       # (Optional) Save updated DB back to cache (best-effort)
       - name: Save DB snapshot
