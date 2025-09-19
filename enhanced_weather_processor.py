@@ -48,12 +48,13 @@ class EcowittWeatherProcessor:
     # ---------- Setup & Configuration ----------
 
     def load_config(self, config_file='weather_config.json'):
+    """Load configuration from JSON file or environment variables"""
     if os.getenv('GITHUB_ACTIONS') or os.getenv('ECOWITT_API_KEY'):
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         logger = logging.getLogger(__name__)
         logger.info("Running in cloud environment - using environment variables")
 
-        # accept either env var name for safety
+        # accept either name for the Gmail secret
         gmail_password = os.getenv('GMAIL_PASSWORD') or os.getenv('GMAIL_APP_PASSWORD') or ''
 
         cloud_config = {
@@ -88,33 +89,31 @@ class EcowittWeatherProcessor:
             raise ValueError(f"Missing required environment variables: {missing}")
 
         return cloud_config
-    # ... (rest unchanged)
 
+    # Local mode: use JSON file if present, otherwise defaults
+    if os.path.exists(config_file):
+        with open(config_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
 
-        # Local config file optional; fallback defaults if absent
-        if os.path.exists(config_file):
-            with open(config_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-
-        return {
-            "ecowitt": {
-                "api_key": "",
-                "application_key": "",
-                "mac": "F0:F5:BD:8A:FA:9C",
-                "base_url": "https://api.ecowitt.net/api/v3"
-            },
-            "email": {
-                "smtp_server": "smtp.gmail.com",
-                "smtp_port": 587,
-                "sender_email": "you@example.com",
-                "sender_password": "",
-                "receiver_email": ["you@example.com"]
-            },
-            "data": {
-                "database_file": "weather_data.db",
-                "charts_directory": "weather_charts"
-            }
+    return {
+        "ecowitt": {
+            "api_key": "",
+            "application_key": "",
+            "mac": "F0:F5:BD:8A:FA:9C",
+            "base_url": "https://api.ecowitt.net/api/v3"
+        },
+        "email": {
+            "smtp_server": "smtp.gmail.com",
+            "smtp_port": 587,
+            "sender_email": "you@example.com",
+            "sender_password": "",
+            "receiver_email": ["you@example.com"]
+        },
+        "data": {
+            "database_file": "weather_data.db",
+            "charts_directory": "weather_charts"
         }
+    }
 
     def setup_logging(self):
         logging.basicConfig(
