@@ -1,271 +1,59 @@
 #!/usr/bin/env python3
 """
-Automated Ecowitt Weather Station Data Processor - Working Version with Windrose
-Processes daily weather data, creates visualizations, and sends HTML email reports
-Enhanced with rainfall beaker widget and integrated windrose
+Automated Ecowitt Weather Station Data Processor - Matplotlib Windrose Edition
+- Processes daily weather data, stores in SQLite
+- Creates a minimal temperature strip chart
+- Creates a Matplotlib windrose (toolkit if available; fallback otherwise)
+- Sends a styled HTML email with:
+    - Metrics grid
+    - Rainfall "beaker" widget (HTML/CSS)
+    - Inline windrose PNG (cid:windrose)
+    - Temperature strip attached (PNG)
 """
 
+import os
+import json
+import logging
+from pathlib import Path
+from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+import sqlite3
 import requests
 import pandas as pd
 import numpy as np
+
 import matplotlib
-import os
-# Set non-interactive backend for cloud environments
+# Use non-interactive backend in headless
 if os.getenv('GITHUB_ACTIONS'):
     matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
-import smtplib
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
+
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
-import json
-from pathlib import Path
-import logging
-import sqlite3
-from typing import Dict, List, Optional
+import smtplib
+
 from scipy.interpolate import interp1d
 
 
 class EcowittWeatherProcessor:
     def __init__(self, config_file='weather_config.json'):
-        """Initialize the weather processor with configuration"""
         self.config = self.load_config(config_file)
         self.setup_logging()
         self.setup_database()
         self.__init_temperature_chart__()
 
-    def __init_temperature_chart__(self):
-        """Initialize temperature chart functionality"""
-        self.TEMPERATURE_COLOR_MAP = [
-            (-9, '#435897'), (-6, '#1d92c1'), (-3, '#60c3c1'), (0, '#7fcebc'),
-            (3, '#91d5ba'), (6, '#cfebb2'), (9, '#e3ecab'), (12, '#ffe796'),
-            (15, '#ffc96c'), (18, '#ffb34c'), (21, '#f67639'), (24, '#c30031'), (27, '#3a000e')
-        ]
-        self.setup_temperature_color_interpolation()
-
-    def setup_temperature_color_interpolation(self):
-        """Setup color interpolation for any temperature value"""
-        temps = [item[0] for item in self.TEMPERATURE_COLOR_MAP]
-        rgb_colors = []
-        for _, hex_color in self.TEMPERATURE_COLOR_MAP:
-            hex_color = hex_color.lstrip('#')
-            rgb = tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
-            rgb_colors.append(rgb)
-
-        r_values = [rgb[0] for rgb in rgb_colors]
-        g_values = [rgb[1] for rgb in rgb_colors]
-        b_values = [rgb[2] for rgb in rgb_colors]
-
-        self.temp_r_interp = interp1d(temps, r_values, kind='linear', bounds_error=False, fill_value='extrapolate')
-        self.temp_g_interp = interp1d(temps, g_values, kind='linear', bounds_error=False, fill_value='extrapolate')
-        self.temp_b_interp = interp1d(temps, b_values, kind='linear', bounds_error=False, fill_value='extrapolate')
-
-    def get_temperature_color(self, temp):
-        """Get the appropriate color for a given temperature"""
-        try:
-            r = max(0, min(255, int(self.temp_r_interp(temp))))
-            g = max(0, min(255, int(self.temp_g_interp(temp))))
-            b = max(0, min(255, int(self.temp_b_interp(temp))))
-            return f'#{r:02x}{g:02x}{b:02x}'
-        except Exception as e:
-            self.logger.warning(f"Error getting color for temperature {temp}: {e}")
-            return '#808080'
-
-    def create_beaker_rainfall_widget(self, rainfall_mm: float, max_scale: float = 25.0) -> str:
-        """Create HTML rainfall beaker widget"""
-        try:
-            rainfall_inches = rainfall_mm / 25.4
-            rainfall_percentage = min(100, (rainfall_mm / max_scale) * 100)
-            
-            if rainfall_mm > max_scale:
-                max_scale = rainfall_mm * 1.2
-                rainfall_percentage = (rainfall_mm / max_scale) * 100
-
-            # Calculate filled cells
-            filled_cells = 0
-            if rainfall_mm > 0:
-                cells_float = (rainfall_percentage / 100) * 6
-                filled_cells = max(1, round(cells_float))
-            
-            self.logger.info(f"Beaker calculation: {rainfall_mm}mm rainfall, {rainfall_percentage}% of {max_scale}mm scale, {filled_cells} cells filled")
-            
-            beaker_html = f'''
-            <div style="text-align: center; margin: 20px 0;">
-                <div style="font-size: 16px; color: #333; font-weight: bold; margin-bottom: 15px;">Daily Rainfall</div>
-                
-                <table cellpadding="0" cellspacing="0" style="margin: 0 auto; border-collapse: collapse;">
-                <tr>
-                    <td style="vertical-align: bottom; padding-right: 8px;">
-                        <table cellpadding="0" cellspacing="0" style="height: 120px; border-collapse: collapse;">
-                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">{max_scale:.0f}</td></tr>
-                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">{max_scale*0.8:.0f}</td></tr>
-                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">{max_scale*0.6:.0f}</td></tr>
-                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">{max_scale*0.4:.0f}</td></tr>
-                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">{max_scale*0.2:.0f}</td></tr>
-                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right; vertical-align: middle;">0</td></tr>
-                        </table>
-                    </td>
-                    
-                    <td style="vertical-align: bottom; padding-right: 5px;">
-                        <table cellpadding="0" cellspacing="0" style="height: 120px; border-collapse: collapse;">
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
-                            <tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>
-                        </table>
-                    </td>
-                    
-                    <td style="vertical-align: bottom;">
-                        <div style="width: 120px; height: 120px; border: 3px solid #666; border-top: none; border-radius: 0 0 6px 6px; background: #f8f8f8; overflow: hidden;">
-                            <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; height: 120px;">
-                                {f'<tr style="height: {20 * (6 - filled_cells)}px;"><td style="background: transparent;"></td></tr>' if filled_cells < 6 else ''}
-                                {f'<tr style="height: {20 * filled_cells}px;"><td style="background: linear-gradient(to top, #1976d2 0%, #42a5f5 50%, #64b5f6 100%);"></td></tr>' if filled_cells > 0 else ''}
-                            </table>
-                        </div>
-                    </td>
-                </tr>
-                </table>
-                
-                <div style="font-size: 20px; color: #1976d2; margin: 10px 0 2px 0; font-weight: 600;">{rainfall_mm:.1f} mm</div>
-                <div style="font-size: 14px; color: #666; margin-bottom: 15px;">({rainfall_inches:.2f} inches)</div>
-            </div>
-            '''
-            
-            return beaker_html
-
-        except Exception as e:
-            self.logger.error(f"Error creating beaker widget: {e}")
-            return "<div style='text-align: center; color: #999;'>Rainfall data unavailable</div>"
-
-    def create_windrose_html_widget(self, target_date) -> str:
-        """Create HTML windrose widget for email integration"""
-        try:
-            end_date = target_date
-            start_date = end_date - timedelta(days=6)
-
-            query = '''
-                SELECT wind_speed, wind_direction 
-                FROM hourly_data 
-                WHERE date BETWEEN ? AND ? AND wind_speed > 0
-            '''
-
-            df = pd.read_sql_query(query, self.conn, params=[
-                start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
-            ])
-
-            if df.empty:
-                self.logger.warning("No wind data available for windrose widget")
-                return '''
-                <div style="text-align: center; margin: 20px 0;">
-                    <div style="font-size: 16px; color: #333; font-weight: bold; margin-bottom: 15px;">Weekly Wind Pattern</div>
-                    <div style="width: 200px; height: 200px; margin: 0 auto; border: 2px solid #ddd; border-radius: 50%; background: #f8f9fa; display: flex; align-items: center; justify-content: center;">
-                        <div style="color: #999; font-size: 14px;">No wind data available</div>
-                    </div>
-                </div>
-                '''
-
-            directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-            direction_ranges = [
-                (337.5, 22.5), (22.5, 67.5), (67.5, 112.5), (112.5, 157.5),
-                (157.5, 202.5), (202.5, 247.5), (247.5, 292.5), (292.5, 337.5)
-            ]
-
-            direction_data = {}
-            total_readings = len(df)
-
-            for i, (direction, (start_deg, end_deg)) in enumerate(zip(directions, direction_ranges)):
-                if start_deg > end_deg:
-                    mask = (df['wind_direction'] >= start_deg) | (df['wind_direction'] < end_deg)
-                else:
-                    mask = (df['wind_direction'] >= start_deg) & (df['wind_direction'] < end_deg)
-                
-                direction_winds = df[mask]
-                frequency = len(direction_winds) / total_readings * 100 if total_readings > 0 else 0
-                avg_speed = direction_winds['wind_speed'].mean() if len(direction_winds) > 0 else 0
-                
-                direction_data[direction] = {
-                    'frequency': frequency,
-                    'avg_speed': avg_speed,
-                    'angle': i * 45
-                }
-
-            dominant_dir = max(direction_data.keys(), key=lambda k: direction_data[k]['frequency'])
-            max_frequency = max(d['frequency'] for d in direction_data.values())
-
-            windrose_html = f'''
-            <div style="text-align: center; margin: 20px 0;">
-                <div style="font-size: 16px; color: #333; font-weight: bold; margin-bottom: 15px;">Weekly Wind Pattern</div>
-                
-                <div style="position: relative; width: 200px; height: 200px; margin: 0 auto; border: 2px solid #ddd; border-radius: 50%; background: radial-gradient(circle, #f8f9fa 0%, #e9ecef 100%);">
-                    <div style="position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; background: #666; border-radius: 50%; transform: translate(-50%, -50%);"></div>
-                    
-                    <div style="position: absolute; top: -5px; left: 50%; transform: translateX(-50%); font-size: 12px; font-weight: bold; color: #333;">N</div>
-                    <div style="position: absolute; top: 50%; right: -8px; transform: translateY(-50%); font-size: 12px; font-weight: bold; color: #333;">E</div>
-                    <div style="position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); font-size: 12px; font-weight: bold; color: #333;">S</div>
-                    <div style="position: absolute; top: 50%; left: -8px; transform: translateY(-50%); font-size: 12px; font-weight: bold; color: #333;">W</div>
-                    '''
-
-            for direction, data in direction_data.items():
-                if data['frequency'] > 0:
-                    bar_length = (data['frequency'] / max_frequency) * 60
-                    angle = data['angle']
-                    
-                    if data['avg_speed'] < 5:
-                        color = '#90EE90'
-                    elif data['avg_speed'] < 10:
-                        color = '#FFD700'
-                    elif data['avg_speed'] < 15:
-                        color = '#FF8C00'
-                    else:
-                        color = '#DC143C'
-
-                    windrose_html += f'''
-                    <div style="position: absolute; top: 50%; left: 50%; width: {bar_length}px; height: 8px; background: {color}; transform-origin: left center; transform: translate(0, -50%) rotate({angle}deg); opacity: 0.8; border-radius: 0 4px 4px 0;"></div>'''
-
-            windrose_html += f'''
-                </div>
-                
-                <div style="margin-top: 15px; font-size: 12px; color: #666;">
-                    <div style="margin-bottom: 8px;">
-                        <strong>Dominant Direction:</strong> {dominant_dir} ({direction_data[dominant_dir]['frequency']:.1f}%)
-                    </div>
-                    <div style="margin-bottom: 8px;">
-                        <span style="display: inline-block; width: 12px; height: 12px; background: #90EE90; margin-right: 4px; border-radius: 2px;"></span>&lt;5 mph
-                        <span style="display: inline-block; width: 12px; height: 12px; background: #FFD700; margin: 0 4px 0 8px; border-radius: 2px;"></span>5-10 mph
-                        <span style="display: inline-block; width: 12px; height: 12px; background: #FF8C00; margin: 0 4px 0 8px; border-radius: 2px;"></span>10-15 mph
-                        <span style="display: inline-block; width: 12px; height: 12px; background: #DC143C; margin: 0 4px 0 8px; border-radius: 2px;"></span>&gt;15 mph
-                    </div>
-                    <div style="font-size: 11px; color: #999;">
-                        Based on {total_readings} wind readings from {start_date.strftime("%m/%d")} to {end_date.strftime("%m/%d")}
-                    </div>
-                </div>
-            </div>
-            '''
-
-            self.logger.info(f"Windrose widget created: {total_readings} readings, dominant direction {dominant_dir}")
-            return windrose_html
-
-        except Exception as e:
-            self.logger.error(f"Error creating windrose HTML widget: {e}")
-            return '''
-            <div style="text-align: center; margin: 20px 0;">
-                <div style="font-size: 16px; color: #333; font-weight: bold; margin-bottom: 15px;">Weekly Wind Pattern</div>
-                <div style="width: 200px; height: 200px; margin: 0 auto; border: 2px solid #ddd; border-radius: 50%; background: #f8f9fa; display: flex; align-items: center; justify-content: center;">
-                    <div style="color: #999; font-size: 14px;">Wind data unavailable</div>
-                </div>
-            </div>
-            '''
+    # ---------- Setup & Configuration ----------
 
     def load_config(self, config_file='weather_config.json'):
-        """Load configuration from JSON file or environment variables"""
+        """Load configuration from JSON file or environment variables."""
         if os.getenv('GITHUB_ACTIONS') or os.getenv('ECOWITT_API_KEY'):
             logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
             logger = logging.getLogger(__name__)
             logger.info("Running in cloud environment - using environment variables")
-            
+
             cloud_config = {
                 "ecowitt": {
                     "api_key": os.getenv('ECOWITT_API_KEY', ''),
@@ -285,20 +73,40 @@ class EcowittWeatherProcessor:
                     "charts_directory": "weather_charts"
                 }
             }
-            
+
             required_vars = ['ECOWITT_API_KEY', 'ECOWITT_APP_KEY', 'GMAIL_PASSWORD']
-            missing_vars = [var for var in required_vars if not os.getenv(var)]
-            
-            if missing_vars:
-                logger.error(f"Missing required environment variables: {missing_vars}")
-                raise ValueError(f"Missing required environment variables: {missing_vars}")
-                
+            missing = [v for v in required_vars if not os.getenv(v)]
+            if missing:
+                logger.error(f"Missing required environment variables: {missing}")
+                raise ValueError(f"Missing required environment variables: {missing}")
             return cloud_config
-        
-        return {}  # Placeholder for local config
+
+        # Local config file optional; fallback defaults if absent
+        if os.path.exists(config_file):
+            with open(config_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+
+        return {
+            "ecowitt": {
+                "api_key": "",
+                "application_key": "",
+                "mac": "F0:F5:BD:8A:FA:9C",
+                "base_url": "https://api.ecowitt.net/api/v3"
+            },
+            "email": {
+                "smtp_server": "smtp.gmail.com",
+                "smtp_port": 587,
+                "sender_email": "you@example.com",
+                "sender_password": "",
+                "receiver_email": ["you@example.com"]
+            },
+            "data": {
+                "database_file": "weather_data.db",
+                "charts_directory": "weather_charts"
+            }
+        }
 
     def setup_logging(self):
-        """Setup logging configuration"""
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -307,10 +115,8 @@ class EcowittWeatherProcessor:
         self.logger = logging.getLogger(__name__)
 
     def setup_database(self):
-        """Setup SQLite database for storing weather data"""
         db_file = self.config['data']['database_file']
         self.conn = sqlite3.connect(db_file)
-
         self.conn.execute('''
             CREATE TABLE IF NOT EXISTS daily_data (
                 date TEXT PRIMARY KEY, avg_temp REAL, max_temp REAL, min_temp REAL,
@@ -318,7 +124,6 @@ class EcowittWeatherProcessor:
                 avg_wind_direction REAL, avg_humidity REAL, avg_pressure REAL
             )
         ''')
-
         self.conn.execute('''
             CREATE TABLE IF NOT EXISTS hourly_data (
                 datetime TEXT PRIMARY KEY, date TEXT, temperature REAL, humidity REAL,
@@ -328,8 +133,43 @@ class EcowittWeatherProcessor:
         ''')
         self.conn.commit()
 
+    # ---------- Temperature color map for strip ----------
+
+    def __init_temperature_chart__(self):
+        self.TEMPERATURE_COLOR_MAP = [
+            (-9, '#435897'), (-6, '#1d92c1'), (-3, '#60c3c1'), (0, '#7fcebc'),
+            (3, '#91d5ba'), (6, '#cfebb2'), (9, '#e3ecab'), (12, '#ffe796'),
+            (15, '#ffc96c'), (18, '#ffb34c'), (21, '#f67639'), (24, '#c30031'), (27, '#3a000e')
+        ]
+        self.setup_temperature_color_interpolation()
+
+    def setup_temperature_color_interpolation(self):
+        temps = [t for t, _ in self.TEMPERATURE_COLOR_MAP]
+        rgb_colors = []
+        for _, hex_color in self.TEMPERATURE_COLOR_MAP:
+            hex_color = hex_color.lstrip('#')
+            rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+            rgb_colors.append(rgb)
+        r_values = [c[0] for c in rgb_colors]
+        g_values = [c[1] for c in rgb_colors]
+        b_values = [c[2] for c in rgb_colors]
+        self.temp_r_interp = interp1d(temps, r_values, kind='linear', bounds_error=False, fill_value='extrapolate')
+        self.temp_g_interp = interp1d(temps, g_values, kind='linear', bounds_error=False, fill_value='extrapolate')
+        self.temp_b_interp = interp1d(temps, b_values, kind='linear', bounds_error=False, fill_value='extrapolate')
+
+    def get_temperature_color(self, temp):
+        try:
+            r = max(0, min(255, int(self.temp_r_interp(temp))))
+            g = max(0, min(255, int(self.temp_g_interp(temp))))
+            b = max(0, min(255, int(self.temp_b_interp(temp))))
+            return f'#{r:02x}{g:02x}{b:02x}'
+        except Exception as e:
+            self.logger.warning(f"Error mapping temperature color for {temp}: {e}")
+            return '#808080'
+
+    # ---------- API & Data Processing ----------
+
     def test_realtime_connection(self):
-        """Test connection with real-time endpoint first"""
         try:
             url = f"{self.config['ecowitt']['base_url']}/device/real_time"
             params = {
@@ -338,24 +178,18 @@ class EcowittWeatherProcessor:
                 'mac': self.config['ecowitt']['mac'],
                 'call_back': 'all'
             }
-
             self.logger.info(f"Testing real-time API: {url}")
-            response = requests.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
-
-            if isinstance(data, dict) and data.get('code') == 0:
-                self.logger.info("SUCCESS: Real-time API connection works!")
-                return True
-            else:
-                self.logger.error(f"Real-time API failed with code: {data.get('code')}")
-                return False
+            resp = requests.get(url, params=params, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            ok = isinstance(data, dict) and data.get('code') == 0
+            self.logger.info("SUCCESS: Real-time API connection works!" if ok else "Real-time API test failed.")
+            return ok
         except Exception as e:
             self.logger.error(f"Error testing real-time connection: {e}")
             return False
 
     def get_historical_data_all_sensors(self, start_date_str, end_date_str, cycle_type='30min'):
-        """Get historical data from all sensor categories"""
         try:
             base_params = {
                 'application_key': self.config['ecowitt']['application_key'],
@@ -365,259 +199,190 @@ class EcowittWeatherProcessor:
                 'end_date': end_date_str,
                 'cycle_type': cycle_type
             }
-
             sensor_categories = ['outdoor', 'indoor', 'pressure', 'wind', 'rainfall']
             all_sensor_data = {}
             url = f"{self.config['ecowitt']['base_url']}/device/history"
 
             for category in sensor_categories:
                 try:
-                    params = base_params.copy()
-                    params['call_back'] = category
-                    
+                    params = {**base_params, 'call_back': category}
                     self.logger.info(f"Fetching {category} historical data...")
-                    response = requests.get(url, params=params)
+                    response = requests.get(url, params=params, timeout=60)
                     response.raise_for_status()
                     data = response.json()
-                    
                     if data.get('code') == 0 and data.get('data'):
                         all_sensor_data[category] = data['data']
-                        self.logger.info(f"Successfully fetched {category} data")
+                        self.logger.info(f"Fetched {category} data")
                     else:
-                        self.logger.warning(f"Failed to fetch {category} data: {data.get('msg')}")
+                        self.logger.warning(f"{category} data unavailable or error: {data.get('msg')}")
                 except Exception as e:
-                    self.logger.error(f"Error fetching {category} data: {e}")
-                    continue
-
+                    self.logger.error(f"Error fetching {category}: {e}")
             return all_sensor_data if all_sensor_data else None
         except Exception as e:
             self.logger.error(f"Error in get_historical_data_all_sensors: {e}")
             return None
 
     def convert_historical_to_dataframe(self, historical_data):
-        """Convert historical sensor data to DataFrame format"""
         try:
             all_records = []
-            
             for category, category_data in historical_data.items():
                 if not isinstance(category_data, dict):
                     continue
-                    
-                if category in category_data:
-                    sensors = category_data[category]
-                else:
-                    sensors = category_data
-                    
+                sensors = category_data.get(category, category_data)
                 for sensor_name, sensor_data in sensors.items():
                     if not isinstance(sensor_data, dict) or 'list' not in sensor_data:
                         continue
-                        
                     unit = sensor_data.get('unit', '')
                     data_list = sensor_data['list']
-                    
                     for timestamp_str, value_str in data_list.items():
                         try:
-                            timestamp_int = int(timestamp_str)
-                            dt = datetime.fromtimestamp(timestamp_int)
-                            
-                            existing_record = None
-                            for record in all_records:
-                                if record['datetime'] == dt:
-                                    existing_record = record
-                                    break
-                                    
-                            if existing_record is None:
-                                existing_record = {'datetime': dt, 'date': dt.date()}
-                                all_records.append(existing_record)
-                                
-                            column_name = f"{category}_{sensor_name}"
-                            existing_record[column_name] = float(value_str)
-                            existing_record[f"{column_name}_unit"] = unit
-                            
-                        except (ValueError, TypeError):
+                            dt = datetime.fromtimestamp(int(timestamp_str))
+                        except Exception:
                             continue
-                            
+                        existing = next((r for r in all_records if r['datetime'] == dt), None)
+                        if existing is None:
+                            existing = {'datetime': dt, 'date': dt.date()}
+                            all_records.append(existing)
+                        col = f"{category}_{sensor_name}"
+                        try:
+                            existing[col] = float(value_str)
+                        except Exception:
+                            continue
+                        existing[f"{col}_unit"] = unit
+
             if not all_records:
-                self.logger.warning("No records created from historical data")
+                self.logger.warning("No records from historical data")
                 return None
-                
-            df = pd.DataFrame(all_records)
-            df = df.sort_values('datetime')
-            
-            # Convert Fahrenheit temperatures to Celsius
-            temp_columns = [col for col in df.columns if 'temperature' in col and not col.endswith('_unit')]
-            for temp_col in temp_columns:
-                if temp_col in df.columns and df[temp_col].mean() > 50:
-                    df[temp_col] = (df[temp_col] - 32) * 5 / 9
-            
-            self.logger.info(f"Created DataFrame with {len(df)} records and columns: {list(df.columns)}")
+            df = pd.DataFrame(all_records).sort_values('datetime')
+
+            # Fahrenheit to Celsius if looks like F
+            temp_columns = [c for c in df.columns if 'temperature' in c and not c.endswith('_unit')]
+            for col in temp_columns:
+                if col in df and df[col].mean() > 50:
+                    df[col] = (df[col] - 32) * 5 / 9
             return df
-            
         except Exception as e:
-            self.logger.error(f"Error converting historical data to DataFrame: {e}")
+            self.logger.error(f"Error converting historical data: {e}")
             return None
 
     def get_ecowitt_data(self, date):
-        """Download data from Ecowitt API for a specific date"""
         try:
             if not self.test_realtime_connection():
-                self.logger.error("Real-time test failed, aborting historical data request")
                 return None
-
             start_date_str = date.strftime('%Y-%m-%d')
             end_date_str = (date + timedelta(days=1)).strftime('%Y-%m-%d')
-            
-            self.logger.info(f"Fetching historical data for {start_date_str} to {end_date_str}")
-            
-            cycle_types = ['5min', '30min', '1hour']
-            for cycle_type in cycle_types:
-                self.logger.info(f"Attempting with cycle_type: {cycle_type}")
-                historical_data = self.get_historical_data_all_sensors(start_date_str, end_date_str, cycle_type)
-                
-                if historical_data:
-                    df = self.convert_historical_to_dataframe(historical_data)
+            self.logger.info(f"Fetching historical data for {start_date_str} -> {end_date_str}")
+            for cycle in ['5min', '30min', '1hour']:
+                hist = self.get_historical_data_all_sensors(start_date_str, end_date_str, cycle)
+                if hist:
+                    df = self.convert_historical_to_dataframe(hist)
                     if df is not None and not df.empty:
-                        self.logger.info(f"SUCCESS: Retrieved {len(df)} historical records with {cycle_type}")
+                        self.logger.info(f"Retrieved {len(df)} records ({cycle})")
                         return df
-                        
-            self.logger.error("All historical data attempts failed")
+            self.logger.error("Historical data attempts failed")
             return None
-            
         except Exception as e:
             self.logger.error(f"Error downloading Ecowitt data: {e}")
             return None
 
     def process_daily_stats(self, df, date):
-        """Calculate daily statistics from weather data"""
         try:
             def safe_numeric_extract(series, default=0):
                 if series.empty:
                     return [default]
-                numeric_values = []
-                for value in series:
-                    extracted_value = None
-                    if isinstance(value, dict):
-                        for key in ['value', 'val', 'data', 'current']:
-                            if key in value:
+                out = []
+                for v in series:
+                    val = None
+                    if isinstance(v, dict):
+                        for k in ['value', 'val', 'data', 'current']:
+                            if k in v:
                                 try:
-                                    extracted_value = float(value[key])
+                                    val = float(v[k])
                                     break
-                                except (ValueError, TypeError):
-                                    continue
-                    elif isinstance(value, (int, float)) and not (pd.isna(value) or np.isnan(value)):
-                        extracted_value = float(value)
-                    elif isinstance(value, str):
+                                except Exception:
+                                    pass
+                    elif isinstance(v, (int, float)) and not (pd.isna(v) or np.isnan(v)):
+                        val = float(v)
+                    elif isinstance(v, str):
                         try:
-                            extracted_value = float(value)
-                        except (ValueError, TypeError):
+                            val = float(v)
+                        except Exception:
                             pass
-                    if extracted_value is not None and not (pd.isna(extracted_value) or np.isnan(extracted_value)):
-                        numeric_values.append(extracted_value)
-                return numeric_values if numeric_values else [default]
+                    if val is not None and not (pd.isna(val) or np.isnan(val)):
+                        out.append(val)
+                return out if out else [default]
 
-            def smart_temp_convert(temp_values, column_name=""):
-                if not temp_values:
-                    return temp_values
-                avg_temp = sum(temp_values) / len(temp_values)
-                min_temp = min(temp_values)
-                max_temp = max(temp_values)
-                is_fahrenheit = (avg_temp > 40) or (min_temp > 32) or (max_temp > 85)
-                if is_fahrenheit:
-                    converted_values = [(temp - 32) * 5 / 9 for temp in temp_values]
-                    self.logger.info(f"Converting {column_name} from Fahrenheit to Celsius")
-                    return converted_values
-                return temp_values
+            def smart_temp_convert(values):
+                if not values:
+                    return values
+                avg = sum(values) / len(values)
+                mn = min(values); mx = max(values)
+                if (avg > 40) or (mn > 32) or (mx > 85):
+                    return [(t - 32) * 5 / 9 for t in values]
+                return values
 
-            # Find temperature columns
-            temp_columns = [col for col in df.columns if any(temp_key in col.lower() for temp_key in ['temperature', 'temp']) and not col.endswith('_unit')]
-            outdoor_temp_col = None
-            for col in temp_columns:
-                if 'outdoor' in col.lower():
-                    outdoor_temp_col = col
-                    break
-            if not outdoor_temp_col and temp_columns:
-                outdoor_temp_col = temp_columns[0]
+            # Column discovery
+            temp_cols = [c for c in df.columns if any(t in c.lower() for t in ['temperature', 'temp']) and not c.endswith('_unit')]
+            outdoor_temp_col = next((c for c in temp_cols if 'outdoor' in c.lower()), temp_cols[0] if temp_cols else None)
+            hum_cols = [c for c in df.columns if 'humidity' in c.lower() and not c.endswith('_unit')]
+            pres_cols = [c for c in df.columns if 'pressure' in c.lower() and not c.endswith('_unit')]
+            ws_cols = [c for c in df.columns if 'wind_speed' in c.lower() and not c.endswith('_unit')]
+            wg_cols = [c for c in df.columns if any(x in c.lower() for x in ['wind_gust','gust']) and not c.endswith('_unit')]
+            wd_cols = [c for c in df.columns if 'wind_direction' in c.lower() and not c.endswith('_unit')]
+            rain_cols = [c for c in df.columns if any(x in c.lower() for x in ['rain','rainfall']) and not c.endswith('_unit')]
 
-            # Extract temperature values
-            temp_values = []
-            if outdoor_temp_col:
-                raw_temp_values = safe_numeric_extract(df[outdoor_temp_col])
-                temp_values = smart_temp_convert(raw_temp_values, outdoor_temp_col)
+            temps = smart_temp_convert(safe_numeric_extract(df[outdoor_temp_col])) if outdoor_temp_col else [0]
+            hum = safe_numeric_extract(df[hum_cols[0]]) if hum_cols else [0]
+            pres = safe_numeric_extract(df[pres_cols[0]]) if pres_cols else [0]
+            ws = safe_numeric_extract(df[ws_cols[0]]) if ws_cols else [0]
+            wg = safe_numeric_extract(df[wg_cols[0]]) if wg_cols else [0]
+            wd = safe_numeric_extract(df[wd_cols[0]]) if wd_cols else [0]
 
-            # Find other sensor columns
-            humidity_columns = [col for col in df.columns if 'humidity' in col.lower() and not col.endswith('_unit')]
-            pressure_columns = [col for col in df.columns if 'pressure' in col.lower() and not col.endswith('_unit')]
-            wind_speed_columns = [col for col in df.columns if 'wind_speed' in col.lower() and not col.endswith('_unit')]
-            wind_gust_columns = [col for col in df.columns if any(x in col.lower() for x in ['wind_gust', 'gust']) and not col.endswith('_unit')]
-            wind_dir_columns = [col for col in df.columns if 'wind_direction' in col.lower() and not col.endswith('_unit')]
-            rain_columns = [col for col in df.columns if any(x in col.lower() for x in ['rain', 'rainfall']) and not col.endswith('_unit')]
-
-            # Extract values
-            humidity_values = safe_numeric_extract(df[humidity_columns[0]]) if humidity_columns else [0]
-            pressure_values = safe_numeric_extract(df[pressure_columns[0]]) if pressure_columns else [0]
-            wind_speed_values = safe_numeric_extract(df[wind_speed_columns[0]]) if wind_speed_columns else [0]
-            wind_gust_values = safe_numeric_extract(df[wind_gust_columns[0]]) if wind_gust_columns else [0]
-            wind_dir_values = safe_numeric_extract(df[wind_dir_columns[0]]) if wind_dir_columns else [0]
-            
-            # Process rain data
+            # Rain: detect units
             daily_rain_total = 0
-            if rain_columns:
-                raw_rain_values = safe_numeric_extract(df[rain_columns[0]])
-                max_rain = max(raw_rain_values) if raw_rain_values else 0
-                if max_rain > 5:
-                    rain_values = [val / 25.4 for val in raw_rain_values]
-                    self.logger.info(f"Converting rain from mm to inches")
-                else:
-                    rain_values = raw_rain_values
-                daily_rain_total = max(rain_values) if rain_values else 0
+            if rain_cols:
+                raw_rain = safe_numeric_extract(df[rain_cols[0]])
+                max_rain = max(raw_rain) if raw_rain else 0
+                # Heuristic: if values look like mm totals, keep; if inches, convert to inches? Your report shows inches & mm
+                # We'll store "total_rainfall" in inches (as your email shows inches), convert from mm if necessary
+                # If max > 5, assume mm and convert to inches
+                rain_in = (max_rain / 25.4) if max_rain > 5 else max_rain
+                daily_rain_total = rain_in
 
-            def safe_avg(values):
-                return sum(values) / len(values) if values and len(values) > 0 else 0
-            def safe_max(values):
-                return max(values) if values and len(values) > 0 else 0
-            def safe_min(values):
-                return min(values) if values and len(values) > 0 else 0
-
+            def avg(v): return sum(v)/len(v) if v else 0
             stats = {
                 'date': date.strftime('%Y-%m-%d'),
-                'avg_temp': safe_avg(temp_values),
-                'max_temp': safe_max(temp_values),
-                'min_temp': safe_min(temp_values),
-                'total_rainfall': daily_rain_total,
-                'avg_wind_speed': safe_avg(wind_speed_values),
-                'max_wind_speed': safe_max(wind_gust_values),
-                'avg_wind_direction': safe_avg(wind_dir_values),
-                'avg_humidity': safe_avg(humidity_values),
-                'avg_pressure': safe_avg(pressure_values)
+                'avg_temp': avg(temps),
+                'max_temp': max(temps) if temps else 0,
+                'min_temp': min(temps) if temps else 0,
+                'total_rainfall': daily_rain_total,  # inches
+                'avg_wind_speed': avg(ws),
+                'max_wind_speed': max(wg) if wg else 0,
+                'avg_wind_direction': avg(wd),
+                'avg_humidity': avg(hum),
+                'avg_pressure': avg(pres)
             }
-
-            self.logger.info(f"Calculated daily stats: {stats}")
+            self.logger.info(f"Daily stats: {stats}")
             return stats
-
         except Exception as e:
             self.logger.error(f"Error processing daily stats: {e}")
             return {}
 
     def save_to_database(self, daily_stats, hourly_df):
-        """Save data to SQLite database"""
         try:
             def safe_db_value(value):
                 if isinstance(value, dict) and 'value' in value:
-                    try:
-                        return float(value['value'])
-                    except (ValueError, TypeError):
-                        return 0
+                    try: return float(value['value'])
+                    except Exception: return 0
                 if isinstance(value, (int, float)):
                     return float(value)
                 if isinstance(value, str):
-                    try:
-                        return float(value)
-                    except (ValueError, TypeError):
-                        return 0
+                    try: return float(value)
+                    except Exception: return 0
                 return 0
 
-            cursor = self.conn.cursor()
-            cursor.execute('''
+            cur = self.conn.cursor()
+            cur.execute('''
                 INSERT OR REPLACE INTO daily_data 
                 (date, avg_temp, max_temp, min_temp, total_rainfall, 
                  avg_wind_speed, max_wind_speed, avg_wind_direction, avg_humidity, avg_pressure)
@@ -629,144 +394,249 @@ class EcowittWeatherProcessor:
                 daily_stats['avg_humidity'], daily_stats['avg_pressure']
             ))
 
-            # Find columns for hourly data
-            temp_columns = [col for col in hourly_df.columns if 'temperature' in col.lower() and not col.endswith('_unit')]
-            humidity_columns = [col for col in hourly_df.columns if 'humidity' in col.lower() and not col.endswith('_unit')]
-            pressure_columns = [col for col in hourly_df.columns if 'pressure' in col.lower() and not col.endswith('_unit')]
-            wind_speed_columns = [col for col in hourly_df.columns if 'wind_speed' in col.lower() and not col.endswith('_unit')]
-            wind_dir_columns = [col for col in hourly_df.columns if 'wind_direction' in col.lower() and not col.endswith('_unit')]
-            rain_columns = [col for col in hourly_df.columns if 'rain' in col.lower() and not col.endswith('_unit')]
+            temp_cols = [c for c in hourly_df.columns if 'temperature' in c.lower() and not c.endswith('_unit')]
+            hum_cols = [c for c in hourly_df.columns if 'humidity' in c.lower() and not c.endswith('_unit')]
+            pres_cols = [c for c in hourly_df.columns if 'pressure' in c.lower() and not c.endswith('_unit')]
+            ws_cols = [c for c in hourly_df.columns if 'wind_speed' in c.lower() and not c.endswith('_unit')]
+            wd_cols = [c for c in hourly_df.columns if 'wind_direction' in c.lower() and not c.endswith('_unit')]
+            rain_cols = [c for c in hourly_df.columns if 'rain' in c.lower() and not c.endswith('_unit')]
 
             for _, row in hourly_df.iterrows():
-                cursor.execute('''
+                cur.execute('''
                     INSERT OR REPLACE INTO hourly_data
                     (datetime, date, temperature, humidity, pressure, wind_speed, wind_direction, rainfall)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     row['datetime'].strftime('%Y-%m-%d %H:%M:%S') if pd.notna(row['datetime']) else '',
                     daily_stats['date'],
-                    safe_db_value(row[temp_columns[0]] if temp_columns else 0),
-                    safe_db_value(row[humidity_columns[0]] if humidity_columns else 0),
-                    safe_db_value(row[pressure_columns[0]] if pressure_columns else 0),
-                    safe_db_value(row[wind_speed_columns[0]] if wind_speed_columns else 0),
-                    safe_db_value(row[wind_dir_columns[0]] if wind_dir_columns else 0),
-                    safe_db_value(row[rain_columns[0]] if rain_columns else 0)
+                    safe_db_value(row[temp_cols[0]] if temp_cols else 0),
+                    safe_db_value(row[hum_cols[0]] if hum_cols else 0),
+                    safe_db_value(row[pres_cols[0]] if pres_cols else 0),
+                    safe_db_value(row[ws_cols[0]] if ws_cols else 0),
+                    safe_db_value(row[wd_cols[0]] if wd_cols else 0),
+                    safe_db_value(row[rain_cols[0]] if rain_cols else 0)
                 ))
-
             self.conn.commit()
-            self.logger.info(f"Data saved to database for {daily_stats['date']}")
-
+            self.logger.info(f"Saved data for {daily_stats['date']}")
         except Exception as e:
-            self.logger.error(f"Error saving to database: {e}")
+            self.logger.error(f"Error saving to DB: {e}")
+
+    # ---------- Charts ----------
 
     def create_minimal_temperature_chart(self, target_date, days=14):
-        """Create minimal temperature chart for email reports"""
+        try:
+            end_date = target_date
+            start_date = end_date - timedelta(days=days - 1)
+            df = pd.read_sql_query('''
+                SELECT date, avg_temp FROM daily_data 
+                WHERE date BETWEEN ? AND ? ORDER BY date ASC
+            ''', self.conn, params=[start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')])
+
+            if df.empty:
+                self.logger.warning("No temp data for minimal chart")
+                return None
+
+            temps = df['avg_temp'].tolist()
+            colors = [self.get_temperature_color(t) for t in temps]
+            fig, ax = plt.subplots(figsize=(max(3, len(temps) * 0.3), 4))
+            ax.bar(range(len(temps)), [1.0]*len(temps), color=colors, edgecolor='none', width=1.0)
+            ax.set_xticks([]); ax.set_yticks([])
+            for spine in ax.spines.values(): spine.set_visible(False)
+            ax.set_xlim(-0.5, len(temps)-0.5); ax.set_ylim(0, 1.0)
+            plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+            charts_dir = Path(self.config['data']['charts_directory']); charts_dir.mkdir(exist_ok=True)
+            out = charts_dir / f'minimal_temperature_{target_date.strftime("%Y%m%d")}.png'
+            fig.savefig(out, dpi=300, bbox_inches='tight', pad_inches=0, facecolor='white')
+            plt.close(fig)
+            self.logger.info(f"Minimal temp chart: {out}")
+            return str(out)
+        except Exception as e:
+            self.logger.error(f"Error creating temp chart: {e}")
+            return None
+
+    def create_matplotlib_windrose(self, target_date, days=7):
+        """
+        Create a Matplotlib windrose PNG for the previous `days` ending at target_date.
+        Tries the `matplotlib-windrose` toolkit; falls back to a pure-Matplotlib polar plot.
+        Returns the file path or None if no data.
+        """
         try:
             end_date = target_date
             start_date = end_date - timedelta(days=days - 1)
 
-            query = '''
-                SELECT date, avg_temp
-                FROM daily_data 
-                WHERE date BETWEEN ? AND ?
-                ORDER BY date ASC
-            '''
-
-            df = pd.read_sql_query(query, self.conn, params=[
-                start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
-            ])
+            df = pd.read_sql_query('''
+                SELECT wind_speed, wind_direction 
+                FROM hourly_data 
+                WHERE date BETWEEN ? AND ? AND wind_speed > 0
+            ''', self.conn, params=[start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')])
 
             if df.empty:
-                self.logger.warning("No temperature data available for minimal chart")
+                self.logger.warning("No wind data for windrose")
                 return None
 
-            temps = df['avg_temp'].tolist()
-            colors = [self.get_temperature_color(temp) for temp in temps]
+            s = pd.to_numeric(df['wind_speed'], errors='coerce')
+            d = pd.to_numeric(df['wind_direction'], errors='coerce')
+            mask = s.notna() & d.notna() & (d >= 0) & (d <= 360) & (s > 0)
+            s = s[mask].values
+            d = d[mask].values
+            if s.size == 0:
+                self.logger.warning("Windrose: all wind data invalid/zero")
+                return None
 
-            bar_height = 1.0
-            bar_heights = [bar_height] * len(temps)
+            charts_dir = Path(self.config['data']['charts_directory']); charts_dir.mkdir(exist_ok=True)
+            out_file = charts_dir / f'windrose_{start_date.strftime("%Y%m%d")}_{end_date.strftime("%Y%m%d")}.png'
 
-            fig, ax = plt.subplots(figsize=(len(temps) * 0.3, 4))
-            bars = ax.bar(range(len(temps)), bar_heights,
-                          color=colors, alpha=1.0, edgecolor='none', width=1.0)
+            dpi = 200
+            figsize = (5, 5)
+            speed_bins = [0, 2, 4, 6, 8, 10, 12, 15, 20, 30]  # mph
+            cmap = cm.viridis
+            norm = mcolors.BoundaryNorm(speed_bins, cmap.N, clip=True)
 
-            ax.set_xticks([])
-            ax.set_yticks([])
-            for spine in ax.spines.values():
-                spine.set_visible(False)
+            used_toolkit = False
+            try:
+                from windrose import WindroseAxes  # requires: pip install matplotlib-windrose
+                fig = plt.figure(figsize=figsize, dpi=dpi)
+                ax = WindroseAxes.from_ax(fig=fig)
+                ax.bar(d, s, normed=True, opening=0.8, edgecolor='none', bins=speed_bins, cmap=cmap)
+                ax.set_legend(title="Wind speed (mph)", loc='lower center',
+                              bbox_to_anchor=(0.5, -0.15), ncol=3, frameon=False)
+                used_toolkit = True
+            except Exception as e:
+                self.logger.info(f"Windrose toolkit unavailable ({e}); using fallback.")
+                fig = plt.figure(figsize=figsize, dpi=dpi)
+                ax = plt.subplot(111, projection='polar')
+                ax.set_theta_zero_location('N')
+                ax.set_theta_direction(-1)
 
-            ax.set_xlim(-0.5, len(temps) - 0.5)
-            ax.set_ylim(0, bar_height)
+                n_sectors = 16  # 22.5° sectors
+                sector_edges_deg = np.linspace(0, 360, n_sectors + 1)
+                sector_edges_rad = np.deg2rad(sector_edges_deg)
+                width = np.deg2rad(360 / n_sectors)
 
-            plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+                sector_idx = np.digitize(d % 360, sector_edges_deg, right=False) - 1
+                sector_idx = np.clip(sector_idx, 0, n_sectors - 1)
 
-            charts_dir = Path(self.config['data']['charts_directory'])
-            charts_dir.mkdir(exist_ok=True)
+                counts = np.zeros((len(speed_bins) - 1, n_sectors), dtype=float)
+                for i_sec in range(n_sectors):
+                    s_in = s[sector_idx == i_sec]
+                    if s_in.size == 0:
+                        continue
+                    hist, _ = np.histogram(s_in, bins=speed_bins)
+                    counts[:, i_sec] = hist
 
-            temp_chart_file = charts_dir / f'minimal_temperature_{target_date.strftime("%Y%m%d")}.png'
+                total = counts.sum()
+                if total > 0:
+                    counts = counts / total * 100.0
 
-            plt.savefig(temp_chart_file, dpi=300, bbox_inches='tight', pad_inches=0,
-                        facecolor='white', edgecolor='none')
-            plt.close()
+                bottoms = np.zeros(n_sectors)
+                bin_centers = [(speed_bins[i] + speed_bins[i+1]) / 2 for i in range(len(speed_bins)-1)]
 
-            avg_temp = sum(temps) / len(temps)
-            temp_range = f"{min(temps):.1f}°C to {max(temps):.1f}°C"
+                for i_bin in range(len(speed_bins)-1):
+                    radii = counts[i_bin, :]
+                    if radii.max() == 0:
+                        continue
+                    color_val = cmap(norm(bin_centers[i_bin]))
+                    ax.bar(sector_edges_rad[:-1] + width/2.0, radii, width=width,
+                           bottom=bottoms, color=color_val, edgecolor='none', align='center')
+                    bottoms += radii
 
-            self.logger.info(f"Minimal temperature chart created: {temp_chart_file}")
-            self.logger.info(f"Temperature range: {temp_range}, Average: {avg_temp:.1f}°C")
+                ax.set_rlabel_position(225)
+                ax.grid(True, alpha=0.3)
+                from matplotlib.patches import Patch
+                legend_patches = [Patch(facecolor=cmap(norm((speed_bins[i]+speed_bins[i+1])/2)),
+                                        label=f"{speed_bins[i]}–{speed_bins[i+1]} mph")
+                                  for i in range(len(speed_bins)-1)]
+                ax.legend(handles=legend_patches, title="Wind speed (mph)",
+                          loc='lower center', bbox_to_anchor=(0.5, -0.15), ncol=3, frameon=False)
 
-            return str(temp_chart_file)
+            fig.suptitle(f"Windrose ({start_date.strftime('%d %b')}–{end_date.strftime('%d %b %Y')})",
+                         y=0.98, fontsize=12)
+            plt.tight_layout(rect=[0, 0.05, 1, 0.95])
+            fig.savefig(out_file, dpi=dpi, bbox_inches='tight', facecolor='white')
+            plt.close(fig)
 
+            self.logger.info(f"Windrose created ({'toolkit' if used_toolkit else 'fallback'}) at {out_file}")
+            return str(out_file)
         except Exception as e:
-            self.logger.error(f"Error creating minimal temperature chart: {e}")
+            self.logger.error(f"Error creating windrose: {e}")
             return None
 
-    def send_email_report(self, daily_stats, windrose_file, rain_file, catchup_days=None):
-        """Send HTML email report with daily statistics and integrated widgets"""
+    # ---------- Widgets & Email ----------
+
+    def create_beaker_rainfall_widget(self, rainfall_mm: float, max_scale: float = 25.0) -> str:
         try:
-            self.logger.info("DEBUGGING: Starting send_email_report method")
-            
+            rainfall_inches = rainfall_mm / 25.4
+            rainfall_percentage = min(100, (rainfall_mm / max_scale) * 100)
+            if rainfall_mm > max_scale:
+                max_scale = rainfall_mm * 1.2
+                rainfall_percentage = (rainfall_mm / max_scale) * 100
+            filled_cells = 0
+            if rainfall_mm > 0:
+                cells_float = (rainfall_percentage / 100) * 6
+                filled_cells = max(1, round(cells_float))
+            beaker_html = f'''
+            <div style="text-align: center; margin: 20px 0;">
+                <div style="font-size: 16px; color: #333; font-weight: bold; margin-bottom: 15px;">Daily Rainfall</div>
+                <table cellpadding="0" cellspacing="0" style="margin: 0 auto; border-collapse: collapse;">
+                <tr>
+                    <td style="vertical-align: bottom; padding-right: 8px;">
+                        <table cellpadding="0" cellspacing="0" style="height: 120px; border-collapse: collapse;">
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right;">{max_scale:.0f}</td></tr>
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right;">{max_scale*0.8:.0f}</td></tr>
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right;">{max_scale*0.6:.0f}</td></tr>
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right;">{max_scale*0.4:.0f}</td></tr>
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right;">{max_scale*0.2:.0f}</td></tr>
+                            <tr style="height: 20px;"><td style="font-size: 11px; color: #666; text-align: right;">0</td></tr>
+                        </table>
+                    </td>
+                    <td style="vertical-align: bottom; padding-right: 5px;">
+                        <table cellpadding="0" cellspacing="0" style="height: 120px; border-collapse: collapse;">
+                            {''.join(['<tr style="height: 20px;"><td style="border-bottom: 1px solid #999; width: 10px;"></td></tr>' for _ in range(6)])}
+                        </table>
+                    </td>
+                    <td style="vertical-align: bottom;">
+                        <div style="width: 120px; height: 120px; border: 3px solid #666; border-top: none; border-radius: 0 0 6px 6px; background: #f8f8f8; overflow: hidden;">
+                            <table cellpadding="0" cellspacing="0" style="border-collapse: collapse; width: 100%; height: 120px;">
+                                {f'<tr style="height: {20 * (6 - filled_cells)}px;"><td style="background: transparent;"></td></tr>' if filled_cells < 6 else ''}
+                                {f'<tr style="height: {20 * filled_cells}px;"><td style="background: linear-gradient(to top, #1976d2 0%, #42a5f5 50%, #64b5f6 100%);"></td></tr>' if filled_cells > 0 else ''}
+                            </table>
+                        </div>
+                    </td>
+                </tr>
+                </table>
+                <div style="font-size: 20px; color: #1976d2; margin: 10px 0 2px 0; font-weight: 600;">{rainfall_mm:.1f} mm</div>
+                <div style="font-size: 14px; color: #666; margin-bottom: 15px;">({rainfall_inches:.2f} inches)</div>
+            </div>'''
+            return beaker_html
+        except Exception as e:
+            self.logger.error(f"Error creating beaker widget: {e}")
+            return "<div style='text-align: center; color: #999;'>Rainfall data unavailable</div>"
+
+    def send_email_report(self, daily_stats, catchup_days=None):
+        try:
             target_date = datetime.strptime(daily_stats['date'], '%Y-%m-%d')
             temp_chart_file = self.create_minimal_temperature_chart(target_date, days=14)
 
+            # Beaker widget uses mm for display
             rainfall_mm = daily_stats['total_rainfall'] * 25.4
-            self.logger.info(f"DEBUGGING: Rainfall = {rainfall_mm}mm")
-            
-            # Create beaker widget
-            self.logger.info("DEBUGGING: About to create beaker widget")
-            try:
-                beaker_html = self.create_beaker_rainfall_widget(rainfall_mm, max_scale=25.0)
-                self.logger.info(f"DEBUGGING: Beaker widget created successfully, length = {len(beaker_html)}")
-            except Exception as e:
-                self.logger.error(f"DEBUGGING: Error creating beaker widget: {e}")
-                beaker_html = "<div style='text-align: center; color: #999;'>Rainfall data unavailable</div>"
+            beaker_html = self.create_beaker_rainfall_widget(rainfall_mm, max_scale=25.0)
 
-            # Create windrose widget
-            self.logger.info("DEBUGGING: About to create windrose widget")
-            try:
-                windrose_html = self.create_windrose_html_widget(target_date)
-                self.logger.info(f"DEBUGGING: Windrose widget created successfully, length = {len(windrose_html)}")
-            except Exception as e:
-                self.logger.error(f"DEBUGGING: Error creating windrose widget: {e}")
-                windrose_html = "<div style='text-align: center; color: #999;'>Wind data unavailable</div>"
+            # Create Matplotlib windrose and attach inline
+            windrose_file = self.create_matplotlib_windrose(target_date, days=7)
 
-            # Handle email configuration
             receiver_emails = self.config['email']['receiver_email']
-            if isinstance(receiver_emails, list):
-                to_addresses = ', '.join(receiver_emails)
-            else:
-                to_addresses = receiver_emails
-                receiver_emails = [receiver_emails]
+            to_addresses = ', '.join(receiver_emails if isinstance(receiver_emails, list) else [receiver_emails])
 
-            # Create email message
-            msg = MIMEMultipart('alternative')
+            msg = MIMEMultipart('related')  # allow inline images
             msg['From'] = self.config['email']['sender_email']
             msg['To'] = to_addresses
             msg['Subject'] = f"Weather Report - {daily_stats['date']}"
 
-            self.logger.info("DEBUGGING: About to create email body")
+            # Create the alternative part (plain and html)
+            alt = MIMEMultipart('alternative')
+            msg.attach(alt)
 
-            # Plain text version
             text_body = f"""Daily Weather Report - {daily_stats['date']}
 
 Current Day Statistics:
@@ -781,10 +651,9 @@ Current Day Statistics:
 • Average Pressure: {daily_stats['avg_pressure']:.2f} inHg
 
 Temperature chart attached.
-Generated by Enhanced Ecowitt Weather Processor
+Generated by Ecowitt Weather Processor
 """
 
-            # HTML version with both widgets
             html_body = f"""
             <!DOCTYPE html>
             <html>
@@ -792,268 +661,181 @@ Generated by Enhanced Ecowitt Weather Processor
                 <meta charset="utf-8">
                 <title>Daily Weather Report</title>
                 <style>
-                    body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa; }}
-                    .container {{ background: white; border-radius: 8px; padding: 30px; }}
-                    .header {{ text-align: center; border-bottom: 2px solid #e9ecef; padding-bottom: 20px; margin-bottom: 30px; }}
-                    .weather-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }}
+                    body {{ font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 20px; background-color: #f8f9fa; }}
+                    .container {{ background: white; border-radius: 8px; padding: 24px; }}
+                    .header {{ text-align: center; border-bottom: 2px solid #e9ecef; padding-bottom: 12px; margin-bottom: 18px; }}
+                    .weather-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }}
                     .weather-item {{ background: #f8f9fa; padding: 10px; border-radius: 6px; text-align: center; }}
-                    .weather-value {{ font-size: 20px; font-weight: bold; color: #2c3e50; }}
+                    .weather-value {{ font-size: 18px; font-weight: bold; color: #2c3e50; }}
                     .weather-label {{ font-size: 12px; color: #666; text-transform: uppercase; margin-top: 2px; }}
-                    .rainfall-section {{ text-align: center; margin: 30px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; }}
+                    .section {{ text-align: center; margin: 18px 0; padding: 14px; background: #f8f9fa; border-radius: 8px; }}
                 </style>
             </head>
             <body>
                 <div class="container">
                     <div class="header">
-                        <h1>Daily Weather Report</h1>
-                        <h2>{daily_stats['date']}</h2>
+                        <h1 style="margin:0;">Daily Weather Report</h1>
+                        <div style="color:#666;">{daily_stats['date']}</div>
                     </div>
 
                     <div class="weather-grid">
-                        <div class="weather-item">
-                            <div class="weather-value">{daily_stats['avg_temp']:.1f}°C</div>
-                            <div class="weather-label">Average Temperature</div>
-                        </div>
-                        <div class="weather-item">
-                            <div class="weather-value">{daily_stats['max_temp']:.1f}°C</div>
-                            <div class="weather-label">Max Temperature</div>
-                        </div>
-                        <div class="weather-item">
-                            <div class="weather-value">{daily_stats['min_temp']:.1f}°C</div>
-                            <div class="weather-label">Min Temperature</div>
-                        </div>
-                        <div class="weather-item">
-                            <div class="weather-value">{daily_stats['avg_humidity']:.1f}%</div>
-                            <div class="weather-label">Humidity</div>
-                        </div>
-                        <div class="weather-item">
-                            <div class="weather-value">{daily_stats['avg_wind_speed']:.1f} mph</div>
-                            <div class="weather-label">Avg Wind Speed</div>
-                        </div>
-                        <div class="weather-item">
-                            <div class="weather-value">{daily_stats['max_wind_speed']:.1f} mph</div>
-                            <div class="weather-label">Max Wind Speed</div>
-                        </div>
-                        <div class="weather-item">
-                            <div class="weather-value">{daily_stats['avg_pressure']:.2f} inHg</div>
-                            <div class="weather-label">Pressure</div>
-                        </div>
-                        <div class="weather-item">
-                            <div class="weather-value">{daily_stats['avg_wind_direction']:.0f}°</div>
-                            <div class="weather-label">Wind Direction</div>
-                        </div>
+                        <div class="weather-item"><div class="weather-value">{daily_stats['avg_temp']:.1f}°C</div><div class="weather-label">Average Temp</div></div>
+                        <div class="weather-item"><div class="weather-value">{daily_stats['max_temp']:.1f}°C</div><div class="weather-label">Max Temp</div></div>
+                        <div class="weather-item"><div class="weather-value">{daily_stats['min_temp']:.1f}°C</div><div class="weather-label">Min Temp</div></div>
+                        <div class="weather-item"><div class="weather-value">{daily_stats['avg_humidity']:.1f}%</div><div class="weather-label">Humidity</div></div>
+                        <div class="weather-item"><div class="weather-value">{daily_stats['avg_wind_speed']:.1f} mph</div><div class="weather-label">Avg Wind</div></div>
+                        <div class="weather-item"><div class="weather-value">{daily_stats['max_wind_speed']:.1f} mph</div><div class="weather-label">Max Wind</div></div>
+                        <div class="weather-item"><div class="weather-value">{daily_stats['avg_pressure']:.2f} inHg</div><div class="weather-label">Pressure</div></div>
+                        <div class="weather-item"><div class="weather-value">{daily_stats['avg_wind_direction']:.0f}°</div><div class="weather-label">Wind Dir</div></div>
                     </div>
 
-                    <div class="rainfall-section">
+                    <div class="section">
                         {beaker_html}
                     </div>
 
-                    <div class="rainfall-section">
-                        {windrose_html}
+                    <div class="section">
+                        <div style="font-size:16px;color:#333;font-weight:bold;margin-bottom:10px;">Weekly Windrose</div>
+                        {"<img src='cid:windrose' alt='Windrose' style='max-width:100%;height:auto;border:1px solid #eee;border-radius:8px;' />" if windrose_file else "<div style='color:#999;'>Wind data unavailable</div>"}
+                        <div style="font-size:11px;color:#999;margin-top:6px;">
+                            Based on 7 days ending {target_date.strftime("%Y-%m-%d")}
+                        </div>
                     </div>
 
-                    <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 14px;">
-                        Temperature chart attached • Generated by Enhanced Ecowitt Weather Processor
+                    <div style="text-align: center; margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; color: #666; font-size: 13px;">
+                        Temperature chart attached • Generated by Ecowitt Weather Processor
                     </div>
                 </div>
             </body>
             </html>
             """
 
-            self.logger.info("DEBUGGING: Email body created successfully")
+            alt.attach(MIMEText(text_body, 'plain'))
+            alt.attach(MIMEText(html_body, 'html'))
 
-            # Attach both parts
-            part1 = MIMEText(text_body, 'plain')
-            part2 = MIMEText(html_body, 'html')
-            
-            msg.attach(part1)
-            msg.attach(part2)
-
-            # Attach temperature chart
+            # Attach temperature chart as attachment
             if temp_chart_file and os.path.exists(temp_chart_file):
                 with open(temp_chart_file, 'rb') as f:
                     img_data = f.read()
-                    image = MIMEImage(img_data)
-                    image.add_header('Content-Disposition', 'attachment', filename='temperature_overview.png')
-                    msg.attach(image)
+                image = MIMEImage(img_data)
+                image.add_header('Content-Disposition', 'attachment', filename='temperature_overview.png')
+                msg.attach(image)
 
-            # Send email
-            self.logger.info("DEBUGGING: About to send email")
+            # Attach windrose inline (CID)
+            if windrose_file and os.path.exists(windrose_file):
+                with open(windrose_file, 'rb') as f:
+                    img_data = f.read()
+                wind_img = MIMEImage(img_data)
+                wind_img.add_header('Content-ID', '<windrose>')
+                wind_img.add_header('Content-Disposition', 'inline', filename='windrose.png')
+                msg.attach(wind_img)
+
+            self.logger.info("Sending email...")
             server = smtplib.SMTP(self.config['email']['smtp_server'], self.config['email']['smtp_port'])
             server.starttls()
             server.login(self.config['email']['sender_email'], self.config['email']['sender_password'])
-            text = msg.as_string()
-            server.sendmail(self.config['email']['sender_email'], receiver_emails, text)
+            server.sendmail(self.config['email']['sender_email'], receiver_emails, msg.as_string())
             server.quit()
-
-            self.logger.info(f"SUCCESS: Email sent successfully with beaker and windrose widgets to {len(receiver_emails)} recipient(s)")
-
+            self.logger.info(f"SUCCESS: Email sent to {receiver_emails}")
         except Exception as e:
-            self.logger.error(f"DEBUGGING: Error in send_email_report: {e}")
-            import traceback
-            self.logger.error(f"DEBUGGING: Traceback: {traceback.format_exc()}")
+            self.logger.error(f"Error in send_email_report: {e}", exc_info=True)
+
+    # ---------- Orchestration ----------
 
     def get_last_processed_date(self):
-        """Get the most recent date that has been processed and saved to database"""
         try:
-            cursor = self.conn.cursor()
-            cursor.execute('SELECT MAX(date) FROM daily_data')
-            result = cursor.fetchone()
-            
-            if result and result[0]:
-                last_date = datetime.strptime(result[0], '%Y-%m-%d')
-                self.logger.info(f"Last processed date in database: {last_date.strftime('%Y-%m-%d')}")
-                return last_date
-            else:
-                self.logger.info("No previous data found in database")
-                return None
+            cur = self.conn.cursor()
+            cur.execute('SELECT MAX(date) FROM daily_data')
+            r = cur.fetchone()
+            if r and r[0]:
+                return datetime.strptime(r[0], '%Y-%m-%d')
+            return None
         except Exception as e:
-            self.logger.error(f"Error getting last processed date: {e}")
+            self.logger.error(f"Error getting last date: {e}")
             return None
 
     def get_missing_dates(self, end_date):
-        """Get list of dates that need to be processed between last processed date and end_date"""
-        last_processed = self.get_last_processed_date()
-        missing_dates = []
-        
-        if last_processed is None:
-            missing_dates = [end_date]
-        else:
-            current_date = last_processed + timedelta(days=1)
-            while current_date <= end_date:
-                missing_dates.append(current_date)
-                current_date += timedelta(days=1)
-        
-        if missing_dates:
-            date_strings = [d.strftime('%Y-%m-%d') for d in missing_dates]
-            self.logger.info(f"Found {len(missing_dates)} missing dates to process: {date_strings}")
-        else:
-            self.logger.info("No missing dates found - database is up to date")
-            
-        return missing_dates
-
-    def process_single_date(self, target_date):
-        """Process weather data for a single specific date"""
-        try:
-            self.logger.info(f"Processing data for {target_date.strftime('%Y-%m-%d')}")
-            
-            existing_daily_stats = self.get_daily_data_from_database(target_date)
-            
-            if existing_daily_stats:
-                self.logger.info(f"Data already exists for {target_date.strftime('%Y-%m-%d')} - skipping")
-                return True
-            
-            hourly_df = self.get_ecowitt_data(target_date)
-            if hourly_df is None or hourly_df.empty:
-                self.logger.warning(f"Failed to get data for {target_date.strftime('%Y-%m-%d')} - may not be available yet")
-                return False
-            
-            daily_stats = self.process_daily_stats(hourly_df, target_date)
-            if not daily_stats:
-                self.logger.error(f"Failed to calculate daily statistics for {target_date.strftime('%Y-%m-%d')}")
-                return False
-            
-            self.save_to_database(daily_stats, hourly_df)
-            self.logger.info(f"Successfully processed {target_date.strftime('%Y-%m-%d')}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error processing {target_date.strftime('%Y-%m-%d')}: {e}")
-            return False
+        last = self.get_last_processed_date()
+        if last is None:
+            return [end_date]
+        dates = []
+        d = last + timedelta(days=1)
+        while d <= end_date:
+            dates.append(d); d += timedelta(days=1)
+        return dates
 
     def get_daily_data_from_database(self, target_date):
-        """Get daily statistics from the database if available"""
         try:
             date_str = target_date.strftime('%Y-%m-%d')
-            cursor = self.conn.cursor()
-
-            cursor.execute('''
+            cur = self.conn.cursor()
+            cur.execute('''
                 SELECT avg_temp, max_temp, min_temp, total_rainfall, 
                        avg_wind_speed, max_wind_speed, avg_wind_direction, 
                        avg_humidity, avg_pressure
-                FROM daily_data 
-                WHERE date = ?
+                FROM daily_data WHERE date = ?
             ''', (date_str,))
-
-            result = cursor.fetchone()
-
-            if result:
-                daily_stats = {
+            res = cur.fetchone()
+            if res:
+                return {
                     'date': date_str,
-                    'avg_temp': result[0], 'max_temp': result[1], 'min_temp': result[2],
-                    'total_rainfall': result[3], 'avg_wind_speed': result[4],
-                    'max_wind_speed': result[5], 'avg_wind_direction': result[6],
-                    'avg_humidity': result[7], 'avg_pressure': result[8]
+                    'avg_temp': res[0], 'max_temp': res[1], 'min_temp': res[2],
+                    'total_rainfall': res[3], 'avg_wind_speed': res[4],
+                    'max_wind_speed': res[5], 'avg_wind_direction': res[6],
+                    'avg_humidity': res[7], 'avg_pressure': res[8]
                 }
-                self.logger.info(f"Found existing daily data in database for {date_str}")
-                return daily_stats
-            else:
-                self.logger.info(f"No existing daily data found for {date_str}")
-                return None
-
+            return None
         except Exception as e:
-            self.logger.error(f"Error getting daily data from database: {e}")
+            self.logger.error(f"Error reading daily data: {e}")
             return None
 
+    def process_single_date(self, target_date):
+        try:
+            if self.get_daily_data_from_database(target_date):
+                self.logger.info(f"{target_date.strftime('%Y-%m-%d')} already processed.")
+                return True
+            hourly_df = self.get_ecowitt_data(target_date)
+            if hourly_df is None or hourly_df.empty:
+                self.logger.warning(f"No hourly data for {target_date.strftime('%Y-%m-%d')}")
+                return False
+            daily_stats = self.process_daily_stats(hourly_df, target_date)
+            if not daily_stats:
+                self.logger.error("Failed to compute daily stats")
+                return False
+            self.save_to_database(daily_stats, hourly_df)
+            return True
+        except Exception as e:
+            self.logger.error(f"Error processing date {target_date}: {e}")
+            return False
+
     def process_previous_day(self):
-        """Main function to process previous day's data with automatic gap-filling"""
         try:
             yesterday = datetime.now() - timedelta(days=1)
             target_date = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+            self.logger.info(f"Processing up to {target_date.strftime('%Y-%m-%d')}")
 
-            self.logger.info(f"Starting weather processing for {target_date.strftime('%Y-%m-%d')}")
-
-            missing_dates = self.get_missing_dates(target_date)
-            
-            if missing_dates:
-                self.logger.info(f"CATCHING UP: Processing {len(missing_dates)} missing days...")
-                
-                successful_dates = []
-                failed_dates = []
-                
-                for missing_date in missing_dates:
-                    if self.process_single_date(missing_date):
-                        successful_dates.append(missing_date)
-                    else:
-                        failed_dates.append(missing_date)
-                
-                if successful_dates:
-                    success_strings = [d.strftime('%Y-%m-%d') for d in successful_dates]
-                    self.logger.info(f"SUCCESS: Successfully caught up on {len(successful_dates)} days: {success_strings}")
-                
-                if failed_dates:
-                    failed_strings = [d.strftime('%Y-%m-%d') for d in failed_dates]
-                    self.logger.warning(f"FAILED: Failed to process {len(failed_dates)} days: {failed_strings}")
-                
+            missing = self.get_missing_dates(target_date)
+            if missing:
+                self.logger.info(f"Catching up {len(missing)} day(s): {[d.strftime('%Y-%m-%d') for d in missing]}")
+                for d in missing:
+                    self.process_single_date(d)
             else:
-                self.logger.info("SUCCESS: Database is up to date - no missing days to process")
+                self.logger.info("No missing days.")
 
-            self.logger.info(f"Processing standard daily report for {target_date.strftime('%Y-%m-%d')}")
-            
+            # Ensure yesterday exists
             daily_stats = self.get_daily_data_from_database(target_date)
-            
             if not daily_stats:
-                if self.process_single_date(target_date):
-                    daily_stats = self.get_daily_data_from_database(target_date)
-                else:
-                    self.logger.error("Failed to process yesterday's data")
+                if not self.process_single_date(target_date):
+                    self.logger.error("Failed to process yesterday; aborting email.")
                     return
+                daily_stats = self.get_daily_data_from_database(target_date)
 
             if daily_stats:
-                self.logger.info(f"Creating email report for {daily_stats['date']}")
-                self.send_email_report(daily_stats, None, None, missing_dates if missing_dates else None)
-
-            self.logger.info("Enhanced daily processing completed successfully")
-
-        except Exception as e:
-            self.logger.error(f"Error in enhanced daily processing: {e}")
+                self.send_email_report(daily_stats, missing if missing else None)
         finally:
             if hasattr(self, 'conn'):
                 self.conn.close()
 
 
 def main():
-    """Main function to run the enhanced weather processor"""
     processor = EcowittWeatherProcessor()
     processor.process_previous_day()
 
