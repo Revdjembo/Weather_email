@@ -17,7 +17,7 @@ jobs:
       ECOWITT_APP_KEY: ${{ secrets.ECOWITT_APP_KEY }}
       ECOWITT_MAC: ${{ secrets.ECOWITT_MAC }}
       GMAIL_EMAIL: ${{ secrets.GMAIL_EMAIL }}
-      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}   # use a Gmail App Password
+      GMAIL_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}   # use a Gmail App Password
       RECEIVER_EMAILS: ${{ secrets.RECEIVER_EMAILS }}     # e.g. "me@example.com,friend@example.com"
 
     steps:
