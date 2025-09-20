@@ -677,7 +677,7 @@ class EcowittWeatherProcessor:
         try:
             target_date = datetime.strptime(daily_stats['date'], '%Y-%m-%d')
             temp_chart_file = self.create_minimal_temperature_chart(target_date, days=14)
-            windrose_file = self.create_matplotlib_windrose(target_date, days=7, width_px=120, dpi=150)
+            windrose_file = self.create_matplotlib_windrose(target_date, days=7, width_px=220, dpi=150)
 
             rainfall_mm = daily_stats['total_rainfall'] * 25.4
             beaker_html = self.create_beaker_rainfall_widget(rainfall_mm, max_scale=25.0)
