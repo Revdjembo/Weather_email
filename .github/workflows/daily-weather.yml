@@ -11,14 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TZ: Europe/London
-
-      # ---- Required secrets (set in Settings > Secrets and variables > Actions) ----
       ECOWITT_API_KEY: ${{ secrets.ECOWITT_API_KEY }}
       ECOWITT_APP_KEY: ${{ secrets.ECOWITT_APP_KEY }}
       ECOWITT_MAC: ${{ secrets.ECOWITT_MAC }}
       GMAIL_EMAIL: ${{ secrets.GMAIL_EMAIL }}
-      # Use a Gmail App Password; maps to the env name your script expects
-      GMAIL_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      # Map BOTH names — it's fine if only one secret exists
+      GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       RECEIVER_EMAILS: ${{ secrets.RECEIVER_EMAILS }}
 
     steps:
