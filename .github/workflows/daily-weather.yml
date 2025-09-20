@@ -4,24 +4,20 @@ on:
   schedule:
     # Cron is UTC. 06:10 UTC ≈ 07:10 London during BST; 06:10 London in winter.
     - cron: '10 6 * * *'
-  workflow_dispatch:
-    inputs:
-      debug_cmds:
-        description: 'Optional: shell commands to run on the runner (e.g., grep lines)'
-        required: false
-        default: ''
+  workflow_dispatch: {}
 
 jobs:
   run:
     runs-on: ubuntu-latest
     env:
       TZ: Europe/London
+
       # ---- Required secrets (set in Settings > Secrets and variables > Actions) ----
       ECOWITT_API_KEY: ${{ secrets.ECOWITT_API_KEY }}
       ECOWITT_APP_KEY: ${{ secrets.ECOWITT_APP_KEY }}
       ECOWITT_MAC: ${{ secrets.ECOWITT_MAC }}
       GMAIL_EMAIL: ${{ secrets.GMAIL_EMAIL }}
-      # Use a Gmail App Password; the script also accepts GMAIL_APP_PASSWORD
+      # Use a Gmail App Password; maps to the env name your script expects
       GMAIL_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       RECEIVER_EMAILS: ${{ secrets.RECEIVER_EMAILS }}
 
@@ -62,15 +58,6 @@ jobs:
           ls -la
           echo "---- Python files found ----"
           find . -maxdepth 3 -type f -name "*.py" -print
-
-      # Option B: run ad-hoc debug commands when triggering workflow manually
-      - name: Run custom debug commands (if provided)
-        if: ${{ inputs.debug_cmds != '' }}
-        run: |
-          set -euxo pipefail
-          echo "Running custom commands:"
-          echo "${{ inputs.debug_cmds }}"
-          bash -lc "${{ inputs.debug_cmds }}"
 
       - name: Run weather processor
         env:
