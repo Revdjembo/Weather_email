@@ -503,13 +503,13 @@ class EcowittWeatherProcessor:
                                width_px: int = 220, dpi: int = 150) -> Optional[str]:
         ...
         # compute a square figure size from desired pixel width
-            figsize = (width_px / dpi, width_px / dpi)  # e.g., 220px @150dpi ≈ 1.47"
+        figsize = (width_px / dpi, width_px / dpi)  # e.g., 220px @150dpi ≈ 1.47"
         # remove old hard-coded values:
         # dpi = 200
         # figsize = (5, 5)
         ...
         # when creating the figure, use the new figsize/dpi everywhere
-            fig = plt.figure(figsize=figsize, dpi=dpi)
+        fig = plt.figure(figsize=figsize, dpi=dpi)
         ...
         # (same for fallback path)
         # fig = plt.figure(figsize=figsize, dpi=dpi)
