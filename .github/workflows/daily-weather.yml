@@ -2,40 +2,28 @@ name: Send Weather Email
 
 on:
   schedule:
+    # Cron is UTC. 06:10 UTC ≈ 07:10 London during BST; 06:10 London in winter.
     - cron: '10 6 * * *'
   workflow_dispatch:
     inputs:
       debug_cmds:
-        description: 'Commands to run on the runner (optional)'
+        description: 'Optional: shell commands to run on the runner (e.g., grep lines)'
         required: false
         default: ''
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # ... your setup/python/install steps ...
-
-      - name: Run custom debug commands (if provided)
-        if: ${{ inputs.debug_cmds != '' }}
-        run: |
-          set -euxo pipefail
-          echo "Running:"
-          echo "${{ inputs.debug_cmds }}"
-          bash -lc "${{ inputs.debug_cmds }}"
-
     env:
       TZ: Europe/London
-
-      # ---- Required secrets (set these in your repo Settings > Secrets and variables > Actions) ----
+      # ---- Required secrets (set in Settings > Secrets and variables > Actions) ----
       ECOWITT_API_KEY: ${{ secrets.ECOWITT_API_KEY }}
       ECOWITT_APP_KEY: ${{ secrets.ECOWITT_APP_KEY }}
       ECOWITT_MAC: ${{ secrets.ECOWITT_MAC }}
       GMAIL_EMAIL: ${{ secrets.GMAIL_EMAIL }}
-      GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}   # use a Gmail App Password
-      RECEIVER_EMAILS: ${{ secrets.RECEIVER_EMAILS }}     # e.g. "me@example.com,friend@example.com"
+      # Use a Gmail App Password; the script also accepts GMAIL_APP_PASSWORD
+      GMAIL_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      RECEIVER_EMAILS: ${{ secrets.RECEIVER_EMAILS }}
 
     steps:
       - name: Checkout repo
@@ -45,20 +33,20 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'          # enables pip cache keyed by requirements.txt
+          cache: 'pip'  # cache keyed by requirements.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ✅ Add this right after installs
       - name: Syntax check
         env:
-          SCRIPT_PATH: enhanced_weather_processor.py   # adjust if your file lives elsewhere
+          SCRIPT_PATH: enhanced_weather_processor.py   # <-- change if your file is elsewhere
         run: |
           python -m py_compile "$SCRIPT_PATH"
 
+      # Optional: keep SQLite DB between runs so the 7-day windrose has history
       - name: Restore DB cache
         uses: actions/cache@v4
         with:
@@ -69,23 +57,33 @@ jobs:
 
       - name: Show repo contents (debug)
         run: |
+          set -x
           pwd
           ls -la
           echo "---- Python files found ----"
           find . -maxdepth 3 -type f -name "*.py" -print
 
+      # Option B: run ad-hoc debug commands when triggering workflow manually
+      - name: Run custom debug commands (if provided)
+        if: ${{ inputs.debug_cmds != '' }}
+        run: |
+          set -euxo pipefail
+          echo "Running custom commands:"
+          echo "${{ inputs.debug_cmds }}"
+          bash -lc "${{ inputs.debug_cmds }}"
+
       - name: Run weather processor
         env:
-          SCRIPT_PATH: enhanced_weather_processor.py
+          SCRIPT_PATH: enhanced_weather_processor.py   # <-- change if your file is elsewhere
         run: |
+          set -e
           if [ ! -f "$SCRIPT_PATH" ]; then
             echo "ERROR: $SCRIPT_PATH not found. Update SCRIPT_PATH to match your repo."
             exit 1
           fi
           python "$SCRIPT_PATH"
 
-
-      # (Optional) Save updated DB back to cache (best-effort)
+      # Optional: save an updated DB snapshot back to cache (best-effort)
       - name: Save DB snapshot
         if: always()
         uses: actions/cache/save@v4
