@@ -501,133 +501,133 @@ class EcowittWeatherProcessor:
 
     def create_matplotlib_windrose(self, target_date, days: int = 7,
                                width_px: int = 220, dpi: int = 150) -> Optional[str]:
-    """
-    Create a Matplotlib windrose PNG for the previous `days` ending at target_date.
-    Uses the `windrose` package if available; otherwise draws a stacked polar bar fallback.
-    Legend is placed BELOW the rose with bottom padding to avoid overlap.
-    """
-    try:
-        end_date = target_date
-        start_date = end_date - timedelta(days=days - 1)
-
-        df = pd.read_sql_query('''
-            SELECT wind_speed, wind_direction
-            FROM hourly_data
-            WHERE date BETWEEN ? AND ? AND wind_speed > 0
-        ''', self.conn, params=[start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')])
-
-        if df.empty:
-            self.logger.warning("No wind data for windrose")
-            return None
-
-        s = pd.to_numeric(df['wind_speed'], errors='coerce')
-        d = pd.to_numeric(df['wind_direction'], errors='coerce')
-        mask = s.notna() & d.notna() & (d >= 0) & (d <= 360) & (s > 0)
-        s = s[mask].values
-        d = d[mask].values
-        if s.size == 0:
-            self.logger.warning("Windrose: all wind samples invalid/zero")
-            return None
-
-        charts_dir = Path(self.config['data']['charts_directory'])
-        charts_dir.mkdir(exist_ok=True)
-        out_file = charts_dir / f'windrose_{start_date.strftime("%Y%m%d")}_{end_date.strftime("%Y%m%d")}.png'
-
-        # ---- sizing ----
-        figsize = (width_px / dpi, width_px / dpi)  # square figure in inches
-
-        # ---- bins & colors ----
-        speed_bins = [0, 2, 4, 6, 8, 10, 12, 15, 20, 30]  # mph bins
-        cmap = cm.viridis
-        norm = mcolors.BoundaryNorm(speed_bins, cmap.N, clip=True)
-
-        # Legend styling (below)
-        legend_kwargs = dict(
-            title="Wind speed (mph)",
-            loc='upper center',
-            bbox_to_anchor=(0.5, -0.12),  # below the axes
-            ncol=3,
-            frameon=False,
-            fontsize=8,
-            handlelength=1.2,
-            columnspacing=0.8,
-            borderaxespad=0.2,
-        )
-        bottom_pad = 0.26  # reserve space at bottom for legend (tweak to 0.28~0.32 if needed)
-
-        used_toolkit = False
+        """
+        Create a Matplotlib windrose PNG for the previous `days` ending at target_date.
+        Uses the `windrose` package if available; otherwise draws a stacked polar bar fallback.
+        Legend is placed BELOW the rose with bottom padding to avoid overlap.
+        """
         try:
-            from windrose import WindroseAxes  # pip install windrose
-            fig = plt.figure(figsize=figsize, dpi=dpi)
-            ax = WindroseAxes.from_ax(fig=fig)
-            ax.bar(d, s, normed=True, opening=0.8, edgecolor='none', bins=speed_bins, cmap=cmap)
-            ax.set_legend(**legend_kwargs)
-            used_toolkit = True
-        except Exception as e:
-            self.logger.info(f"Windrose toolkit unavailable ({e}); using fallback.")
-            fig = plt.figure(figsize=figsize, dpi=dpi)
-            ax = plt.subplot(111, projection='polar')
-            ax.set_theta_zero_location('N')
-            ax.set_theta_direction(-1)
+            end_date = target_date
+            start_date = end_date - timedelta(days=days - 1)
 
-            # 16 direction sectors (22.5° each)
-            n_sectors = 16
-            sector_edges_deg = np.linspace(0, 360, n_sectors + 1)
-            sector_edges_rad = np.deg2rad(sector_edges_deg)
-            width = np.deg2rad(360 / n_sectors)
+            df = pd.read_sql_query('''
+                SELECT wind_speed, wind_direction
+                FROM hourly_data
+                WHERE date BETWEEN ? AND ? AND wind_speed > 0
+            ''', self.conn, params=[start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')])
 
-            sector_idx = np.digitize(d % 360, sector_edges_deg, right=False) - 1
-            sector_idx = np.clip(sector_idx, 0, n_sectors - 1)
+            if df.empty:
+                self.logger.warning("No wind data for windrose")
+                return None
 
-            counts = np.zeros((len(speed_bins) - 1, n_sectors), dtype=float)
-            for i_sec in range(n_sectors):
-                s_in = s[sector_idx == i_sec]
-                if s_in.size == 0:
-                    continue
-                hist, _ = np.histogram(s_in, bins=speed_bins)
-                counts[:, i_sec] = hist
+            s = pd.to_numeric(df['wind_speed'], errors='coerce')
+            d = pd.to_numeric(df['wind_direction'], errors='coerce')
+            mask = s.notna() & d.notna() & (d >= 0) & (d <= 360) & (s > 0)
+            s = s[mask].values
+            d = d[mask].values
+            if s.size == 0:
+                self.logger.warning("Windrose: all wind samples invalid/zero")
+                return None
 
-            total = counts.sum()
-            if total > 0:
-                counts = counts / total * 100.0
+            charts_dir = Path(self.config['data']['charts_directory'])
+            charts_dir.mkdir(exist_ok=True)
+            out_file = charts_dir / f'windrose_{start_date.strftime("%Y%m%d")}_{end_date.strftime("%Y%m%d")}.png'
 
-            bottoms = np.zeros(n_sectors)
-            bin_centers = [(speed_bins[i] + speed_bins[i + 1]) / 2 for i in range(len(speed_bins) - 1)]
+            # ---- sizing ----
+            figsize = (width_px / dpi, width_px / dpi)  # square figure in inches
 
-            for i_bin in range(len(speed_bins) - 1):
-                radii = counts[i_bin, :]
-                if radii.max() == 0:
-                    continue
-                color_val = cmap(norm(bin_centers[i_bin]))
-                ax.bar(sector_edges_rad[:-1] + width / 2.0, radii, width=width,
-                       bottom=bottoms, color=color_val, edgecolor='none', align='center')
-                bottoms += radii
+            # ---- bins & colors ----
+            speed_bins = [0, 2, 4, 6, 8, 10, 12, 15, 20, 30]  # mph bins
+            cmap = cm.viridis
+            norm = mcolors.BoundaryNorm(speed_bins, cmap.N, clip=True)
 
-            ax.set_rlabel_position(225)
-            ax.grid(True, alpha=0.3)
+            # Legend styling (below)
+            legend_kwargs = dict(
+                title="Wind speed (mph)",
+                loc='upper center',
+                bbox_to_anchor=(0.5, -0.12),  # below the axes
+                ncol=3,
+                frameon=False,
+                fontsize=8,
+                handlelength=1.2,
+                columnspacing=0.8,
+                borderaxespad=0.2,
+            )
+            bottom_pad = 0.26  # reserve space at bottom for legend (tweak to 0.28~0.32 if needed)
 
-            from matplotlib.patches import Patch
-            legend_patches = [Patch(facecolor=cmap(norm((speed_bins[i] + speed_bins[i + 1]) / 2)),
-                                    label=f"{speed_bins[i]}–{speed_bins[i + 1]} mph")
-                              for i in range(len(speed_bins) - 1)]
-            ax.legend(handles=legend_patches, **legend_kwargs)
+            used_toolkit = False
+            try:
+                from windrose import WindroseAxes  # pip install windrose
+                fig = plt.figure(figsize=figsize, dpi=dpi)
+                ax = WindroseAxes.from_ax(fig=fig)
+                ax.bar(d, s, normed=True, opening=0.8, edgecolor='none', bins=speed_bins, cmap=cmap)
+                ax.set_legend(**legend_kwargs)
+                used_toolkit = True
+            except Exception as e:
+                self.logger.info(f"Windrose toolkit unavailable ({e}); using fallback.")
+                fig = plt.figure(figsize=figsize, dpi=dpi)
+                ax = plt.subplot(111, projection='polar')
+                ax.set_theta_zero_location('N')
+                ax.set_theta_direction(-1)
 
-        # Title + layout
-        fig.suptitle(f"Windrose ({start_date.strftime('%d %b')}–{end_date.strftime('%d %b %Y')})",
+                # 16 direction sectors (22.5° each)
+                n_sectors = 16
+                sector_edges_deg = np.linspace(0, 360, n_sectors + 1)
+                sector_edges_rad = np.deg2rad(sector_edges_deg)
+                width = np.deg2rad(360 / n_sectors)
+
+                sector_idx = np.digitize(d % 360, sector_edges_deg, right=False) - 1
+                sector_idx = np.clip(sector_idx, 0, n_sectors - 1)
+
+                counts = np.zeros((len(speed_bins) - 1, n_sectors), dtype=float)
+                for i_sec in range(n_sectors):
+                    s_in = s[sector_idx == i_sec]
+                    if s_in.size == 0:
+                        continue
+                    hist, _ = np.histogram(s_in, bins=speed_bins)
+                    counts[:, i_sec] = hist
+
+                total = counts.sum()
+                if total > 0:
+                    counts = counts / total * 100.0
+
+                bottoms = np.zeros(n_sectors)
+                bin_centers = [(speed_bins[i] + speed_bins[i + 1]) / 2 for i in range(len(speed_bins) - 1)]
+
+                for i_bin in range(len(speed_bins) - 1):
+                    radii = counts[i_bin, :]
+                    if radii.max() == 0:
+                        continue
+                    color_val = cmap(norm(bin_centers[i_bin]))
+                    ax.bar(sector_edges_rad[:-1] + width / 2.0, radii, width=width,
+                           bottom=bottoms, color=color_val, edgecolor='none', align='center')
+                    bottoms += radii
+
+                ax.set_rlabel_position(225)
+                ax.grid(True, alpha=0.3)
+
+                from matplotlib.patches import Patch
+                legend_patches = [Patch(facecolor=cmap(norm((speed_bins[i] + speed_bins[i + 1]) / 2)),
+                                        label=f"{speed_bins[i]}–{speed_bins[i + 1]} mph")
+                                  for i in range(len(speed_bins) - 1)]
+                ax.legend(handles=legend_patches, **legend_kwargs)
+
+            # Title + layout
+            fig.suptitle(f"Windrose ({start_date.strftime('%d %b')}–{end_date.strftime('%d %b %Y')})",
                      y=0.98, fontsize=11)
-        # Leave a bit of room for title, then reserve bottom for legend
-        plt.tight_layout(rect=[0, 0.06, 1, 0.96])
-        fig.subplots_adjust(bottom=bottom_pad)
+            # Leave a bit of room for title, then reserve bottom for legend
+            plt.tight_layout(rect=[0, 0.06, 1, 0.96])
+            fig.subplots_adjust(bottom=bottom_pad)
 
-        fig.savefig(out_file, dpi=dpi, bbox_inches='tight', facecolor='white')
-        plt.close(fig)
+            fig.savefig(out_file, dpi=dpi, bbox_inches='tight', facecolor='white')
+            plt.close(fig)
 
-        self.logger.info(f"Windrose created ({'toolkit' if used_toolkit else 'fallback'}) at {out_file}")
-        return str(out_file)
+            self.logger.info(f"Windrose created ({'toolkit' if used_toolkit else 'fallback'}) at {out_file}")
+            return str(out_file)
 
-    except Exception as e:
-        self.logger.error(f"create_matplotlib_windrose error: {e}")
-        return None
+        except Exception as e:
+            self.logger.error(f"create_matplotlib_windrose error: {e}")
+            return None
 
 
     # --------------------------- Widgets & Email ---------------------------
