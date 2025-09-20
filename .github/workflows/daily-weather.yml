@@ -2,6 +2,32 @@ name: Send Weather Email
 
 on:
   schedule:
+    - cron: '10 6 * * *'
+  workflow_dispatch:
+    inputs:
+      debug_cmds:
+        description: 'Commands to run on the runner (optional)'
+        required: false
+        default: ''
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ... your setup/python/install steps ...
+
+      - name: Run custom debug commands (if provided)
+        if: ${{ inputs.debug_cmds != '' }}
+        run: |
+          set -euxo pipefail
+          echo "Running:"
+          echo "${{ inputs.debug_cmds }}"
+          bash -lc "${{ inputs.debug_cmds }}"
+
+on:
+  schedule:
     # Cron runs in UTC. 06:10 UTC ≈ 07:10 London during BST; 06:10 London in winter.
     - cron: '10 6 * * *'
   workflow_dispatch: {}
